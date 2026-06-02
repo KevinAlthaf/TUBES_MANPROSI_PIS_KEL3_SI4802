@@ -15,14 +15,20 @@ export default function StatusLamaran() {
 
   useEffect(() => {
     if (user?.id) {
-      fetch(`/api/applications/${user.id}`)
+      // 1. Gunakan variabel Vercel yang sudah kita buat di .env
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      
+      fetch(`${API_URL}/applications/${user.id}`)
         .then(res => res.json())
         .then(data => {
-          setApplications(data);
+          // 2. Amankan state: pastikan yang masuk HANYA array
+          // Jika data ternyata error/bukan array, jadikan array kosong []
+          setApplications(Array.isArray(data) ? data : []);
           setLoading(false);
         })
         .catch(err => {
           console.error(err);
+          setApplications([]); // Pastikan array kosong saat koneksi gagal
           setLoading(false);
         });
     }

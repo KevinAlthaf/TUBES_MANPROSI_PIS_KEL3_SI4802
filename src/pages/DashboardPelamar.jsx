@@ -44,7 +44,8 @@ export default function DashboardPelamar() {
 
     setIsApplying(true);
     try {
-      const res = await fetch('/api/applications', {
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      const res = await fetch(`${API_URL}/applications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
