@@ -188,7 +188,7 @@ export default function InterviewRoom() {
     if (localStream) localStream.getTracks().forEach(t => t.stop());
     if (screenStream) screenStream.getTracks().forEach(t => t.stop());
     
-    if (user?.id == applicant?.user_id) {
+    if (user?.role === 'Pelamar') {
       try {
         await fetch(`/api/applications/finish-interview/${user.id}`, { method: 'PUT' });
       } catch (err) {}
@@ -270,9 +270,9 @@ export default function InterviewRoom() {
                 </div>
               </div>
             )}
-            <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium">
-              Anda ({user?.id == applicant?.user_id ? 'Pelamar' : 'HRD'}) {!isMicOn && ' - Muted'}
-            </div>
+          <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium">
+            Anda ({user?.name || user?.role}) {!isMicOn && ' - Muted'}
+          </div>
           </div>
 
           {/* Remote Video (Mock Counterpart) or Screen Share Main view */}
@@ -292,8 +292,8 @@ export default function InterviewRoom() {
               />
             )}
             <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium">
-              {isScreenSharing ? 'Layar Anda' : (user?.id == applicant?.user_id ? 'HRD' : (applicant ? applicant.name : 'Pelamar'))}
-            </div>
+            {isScreenSharing ? 'Layar Anda' : (user?.role === 'Pelamar' ? 'HRD' : (applicant?.name || 'Pelamar'))}
+          </div>
           </div>
         </div>
 
