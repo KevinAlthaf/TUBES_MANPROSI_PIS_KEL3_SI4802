@@ -35,7 +35,7 @@ const upload = multer({ storage });
 // Database Migrations
 (async () => {
   try {
-    await db.query('ALTER TABLE jobs ADD COLUMN hr_id INT');
+    await db.query('ALTER TABLE jobs ADD COLUMN hr_id INTEGER');
     console.log('Added hr_id to jobs table');
   } catch (e) { /* ignore if already exists */ }
   try {
@@ -47,7 +47,7 @@ const upload = multer({ storage });
   } catch (err) {}
   
   try {
-    await db.query('ALTER TABLE applicants ADD COLUMN interview_score INT DEFAULT NULL');
+    await db.query('ALTER TABLE applicants ADD COLUMN interview_score INTEGER DEFAULT NULL');
   } catch (err) {}
 
   try {
@@ -61,8 +61,8 @@ const upload = multer({ storage });
   try {
     await db.query(`
       CREATE TABLE IF NOT EXISTS support_messages (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        hr_id INT,
+        id SERIAL PRIMARY KEY,
+        hr_id INTEGER,
         sender_role VARCHAR(50),
         text TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -852,7 +852,7 @@ app.put('/api/profile/user', async (req, res) => {
 app.use(express.static(path.join(__dirname, '../dist')));
 
 // Catch-all route to serve React's index.html for all other routes
-app.get('*', (req, res) => {
+app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 

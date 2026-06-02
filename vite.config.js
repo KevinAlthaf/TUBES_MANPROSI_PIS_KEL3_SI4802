@@ -7,8 +7,8 @@ export default defineConfig({
   // base: '/TUGAS_BESAR-MANPROSI_PIS/',
   server: {
     proxy: {
-      '/api': 'http://localhost:5000',
-      '/uploads': 'http://localhost:5000'
+      '/api': process.env.VITE_API_URL || 'http://localhost:5000',
+      '/uploads': process.env.VITE_API_URL || 'http://localhost:5000'
     }
   },
   plugins: [

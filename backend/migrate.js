@@ -1,53 +1,52 @@
+// import 'dotenv/config'; 
 import db from './db.js';
+
 
 async function migrate() {
   try {
     console.log("Starting migration...");
     await db.query(`
       CREATE TABLE IF NOT EXISTS company_profile (
-        id int(11) NOT NULL AUTO_INCREMENT,
-        nama_perusahaan varchar(255) DEFAULT '',
-        email_perusahaan varchar(255) DEFAULT '',
-        deskripsi text DEFAULT NULL,
-        no_telp varchar(50) DEFAULT '',
-        alamat text DEFAULT NULL,
-        provinsi varchar(100) DEFAULT '',
-        kota varchar(100) DEFAULT '',
-        kecamatan varchar(100) DEFAULT '',
-        kode_pos varchar(20) DEFAULT '',
-        jumlah_pegawai varchar(50) DEFAULT '',
-        industri varchar(100) DEFAULT '',
-        website varchar(255) DEFAULT '',
-        tahun_berdiri varchar(10) DEFAULT '',
-        nib varchar(100) DEFAULT '',
-        logo varchar(255) DEFAULT NULL,
-        PRIMARY KEY (id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        id SERIAL PRIMARY KEY,
+        nama_perusahaan VARCHAR(255) DEFAULT '',
+        email_perusahaan VARCHAR(255) DEFAULT '',
+        deskripsi TEXT DEFAULT NULL,
+        no_telp VARCHAR(50) DEFAULT '',
+        alamat TEXT DEFAULT NULL,
+        provinsi VARCHAR(100) DEFAULT '',
+        kota VARCHAR(100) DEFAULT '',
+        kecamatan VARCHAR(100) DEFAULT '',
+        kode_pos VARCHAR(20) DEFAULT '',
+        jumlah_pegawai VARCHAR(50) DEFAULT '',
+        industri VARCHAR(100) DEFAULT '',
+        website VARCHAR(255) DEFAULT '',
+        tahun_berdiri VARCHAR(10) DEFAULT '',
+        nib VARCHAR(100) DEFAULT '',
+        logo VARCHAR(255) DEFAULT NULL,
+        nib_file VARCHAR(255) DEFAULT NULL
+      );
     `);
 
     await db.query(`
       CREATE TABLE IF NOT EXISTS user_profile (
-        id int(11) NOT NULL AUTO_INCREMENT,
-        nama_lengkap varchar(255) DEFAULT '',
-        email varchar(255) DEFAULT '',
-        no_whatsapp varchar(50) DEFAULT '',
-        PRIMARY KEY (id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        id SERIAL PRIMARY KEY,
+        nama_lengkap VARCHAR(255) DEFAULT '',
+        email VARCHAR(255) DEFAULT '',
+        no_whatsapp VARCHAR(50) DEFAULT ''
+      );
     `);
 
     await db.query(`
       INSERT INTO company_profile (id, nama_perusahaan, email_perusahaan, deskripsi, no_telp, alamat, provinsi, kota, kecamatan, kode_pos, jumlah_pegawai, industri, website, tahun_berdiri, nib, logo)
-      SELECT 1, '', '', '', '', '', '', '', '', '', '', '', '', '', '', NULL
-      FROM DUAL
-      WHERE NOT EXISTS (SELECT 1 FROM company_profile WHERE id = 1);
-    `);
+      VALUES (1, '', '', '', '', '', '', '', '', '', '', '', '', '', '', NULL)
+      ON CONFLICT (id) DO NOTHING
+    `); 
 
     await db.query(`
       INSERT INTO user_profile (id, nama_lengkap, email, no_whatsapp)
-      SELECT 1, '', '', ''
-      FROM DUAL
-      WHERE NOT EXISTS (SELECT 1 FROM user_profile WHERE id = 1);
-    `);
+      VALUES (1, '', '', '')
+      ON CONFLICT (id) DO NOTHING
+    `); 
 
     console.log("Migration complete: Tables created and seeded successfully!");
     process.exit(0);
