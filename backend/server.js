@@ -10,17 +10,21 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure uploads directory exists
-fs.mkdirSync('uploads', { recursive: true });
+// --- PERBAIKAN 1: Menyesuaikan folder uploads untuk Vercel ---
+// Vercel hanya mengizinkan pembuatan folder/file di dalam folder /tmp
+const uploadDir = process.env.VERCEL ? '/tmp/uploads' : 'uploads';
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(uploadDir));
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, uploadDir); // Gunakan direktori yang aman
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -847,16 +851,22 @@ app.put('/api/profile/user', async (req, res) => {
   }
 });
 
-// --- DEPLOYMENT SETUP ---
-// Serve static files from the React frontend build
-app.use(express.static(path.join(__dirname, '../dist')));
+// --- PERBAIKAN 2: Penyesuaian Fitur Static Files dan Export ---
+const distPath = path.join(__dirname, '../dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get(/.*/, (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
 
-// Catch-all route to serve React's index.html for all other routes
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
+// WAJIB UNTUK VERCEL: Export fungsi aplikasinya (Ini solusi utama 500 Error)
+export default app;
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
-});
+// Tetap pertahankan app.listen agar kamu tetap bisa ngetest aplikasinya di localhost laptopmu
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Backend server running on port ${PORT}`);
+  });
+}
