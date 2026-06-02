@@ -847,8 +847,16 @@ app.put('/api/profile/user', async (req, res) => {
   }
 });
 
-const PORT = 5000;
-app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
+// --- DEPLOYMENT SETUP ---
+// Serve static files from the React frontend build
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// Catch-all route to serve React's index.html for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Backend server running on port ${PORT}`);
+});

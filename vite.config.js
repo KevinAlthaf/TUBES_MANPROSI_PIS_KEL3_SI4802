@@ -5,6 +5,12 @@ import tailwindcss from '@tailwindcss/vite'
 // https://vite.dev/config/
 export default defineConfig({
   // base: '/TUGAS_BESAR-MANPROSI_PIS/',
+  server: {
+    proxy: {
+      '/api': 'http://localhost:5000',
+      '/uploads': 'http://localhost:5000'
+    }
+  },
   plugins: [
     tailwindcss(),
     react()

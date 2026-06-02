@@ -190,13 +190,13 @@ export default function InterviewRoom() {
     
     if (user?.id == applicant?.user_id) {
       try {
-        await fetch(`http://localhost:5000/api/applications/finish-interview/${user.id}`, { method: 'PUT' });
+        await fetch(`/api/applications/finish-interview/${user.id}`, { method: 'PUT' });
       } catch (err) {}
       navigate('/pelamar/status-lamaran');
     } else {
       if (transcript.trim()) {
         try {
-          await fetch(`http://localhost:5000/api/applicants/${id}/transcript`, {
+          await fetch(`/api/applicants/${id}/transcript`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ transcript: transcript })

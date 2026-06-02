@@ -249,7 +249,7 @@ export default function Pengaturan() {
               <div className="w-32 h-32 rounded-full bg-gray-50 border-2 border-dashed border-gray-300 flex items-center justify-center mb-6 relative overflow-hidden">
                 {formData.logo ? (
                   <img 
-                    src={`http://localhost:5000/uploads/${formData.logo}`} 
+                    src={`/uploads/${formData.logo}`} 
                     alt="Logo Perusahaan" 
                     className="w-full h-full object-cover"
                   />
@@ -437,7 +437,7 @@ export default function Pengaturan() {
                         <Check size={18} className="text-green-600 shrink-0" />
                         <span>Dokumen Terupload:</span>
                         <a 
-                          href={`http://localhost:5000/uploads/${formData.nibFile}`} 
+                          href={`/uploads/${formData.nibFile}`} 
                           target="_blank" 
                           rel="noopener noreferrer" 
                           className="text-blue-600 hover:text-blue-800 underline truncate hover:cursor-pointer"

@@ -3,7 +3,7 @@ import { useAuth } from './AuthContext';
 
 const DataContext = createContext();
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = '/api';
 
 export const DataProvider = ({ children }) => {
   const { user } = useAuth();

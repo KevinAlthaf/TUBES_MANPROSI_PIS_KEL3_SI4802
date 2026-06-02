@@ -15,7 +15,7 @@ export default function StatusLamaran() {
 
   useEffect(() => {
     if (user?.id) {
-      fetch(`http://localhost:5000/api/applications/${user.id}`)
+      fetch(`/api/applications/${user.id}`)
         .then(res => res.json())
         .then(data => {
           setApplications(data);

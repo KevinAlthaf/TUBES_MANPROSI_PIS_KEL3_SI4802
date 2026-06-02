@@ -12,7 +12,7 @@ export default function PesanSupport() {
 
   useEffect(() => {
     // Fetch all HR users for the sidebar
-    fetch('http://localhost:5000/api/hr-users')
+    fetch('/api/hr-users')
       .then(res => res.json())
       .then(data => setHrUsers(data))
       .catch(err => console.error(err));

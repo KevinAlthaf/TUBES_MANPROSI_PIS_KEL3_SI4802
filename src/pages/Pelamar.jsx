@@ -127,7 +127,7 @@ export default function Pelamar() {
                             <p className="font-semibold text-gray-900">{app.name}</p>
                             <p 
                               className="text-xs text-blue-600 flex items-center gap-1 cursor-pointer hover:underline"
-                              onClick={() => window.open('http://localhost:5000/uploads/' + (app.cv || 'no-cv.pdf'), '_blank')}
+                              onClick={() => window.open('/uploads/' + (app.cv || 'no-cv.pdf'), '_blank')}
                             >
                               <FileText size={12} /> Lihat CV
                             </p>

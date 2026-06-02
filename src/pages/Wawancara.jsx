@@ -107,7 +107,7 @@ export default function Wawancara() {
     try {
       const cleanNotes = notes.replace(/\n\n\[Kesimpulan Analisis AI\]:[\s\S]*/g, '');
       
-      const res = await fetch('http://localhost:5000/api/ai/analyze-notes', {
+      const res = await fetch('/api/ai/analyze-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes: cleanNotes, score: score })

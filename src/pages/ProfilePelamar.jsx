@@ -102,7 +102,7 @@ export default function ProfilePelamar() {
         const formData = new FormData();
         formData.append('file', file);
 
-        const res = await fetch('http://localhost:5000/api/upload', {
+        const res = await fetch('/api/upload', {
           method: 'POST',
           body: formData
         });
@@ -291,7 +291,7 @@ export default function ProfilePelamar() {
                     <span className="text-sm font-medium text-green-600 flex items-center gap-1">✓ Terupload</span>
                   )}
                   {docs[`${doc.id}Url`] && doc.id === 'cv' && (
-                    <a href={`http://localhost:5000/uploads/${docs.cvUrl}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-semibold mr-1">
+                    <a href={`/uploads/${docs.cvUrl}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-semibold mr-1">
                       Lihat CV
                     </a>
                   )}
