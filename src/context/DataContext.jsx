@@ -171,6 +171,26 @@ export const DataProvider = ({ children }) => {
     }
   };
 
+  const deleteJob = async (jobId) => {
+    try {
+      const res = await fetch(`${API_URL}/jobs/${jobId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        // Remove from jobs list
+        setJobs(prev => prev.filter(j => j.id !== jobId));
+        // Remove related applicants from applicants list (due to cascade on backend)
+        setApplicants(prev => prev.filter(a => a.jobId !== jobId));
+        return { success: true };
+      } else {
+        return { success: false, error: 'Gagal menghapus lowongan.' };
+      }
+    } catch (error) {
+      console.error(error);
+      return { success: false, error: 'Koneksi ke backend gagal.' };
+    }
+  };
+
   const addSupportMessage = async (text, role, targetHrId = null) => {
     const timestamp = new Date().toISOString();
     const hrId = targetHrId || user?.id; // If HR, it's their own ID. If Operator, it's the target HR's ID.
@@ -279,7 +299,7 @@ export const DataProvider = ({ children }) => {
     <DataContext.Provider value={{ 
       jobs, applicants, updateApplicantStatus, addInterviewFeedback, addJob,
       isChatOpen, setIsChatOpen, psychotestPackages, addPsychotestPackage,
-      supportMessages, addSupportMessage, updateJobStatus, updateJob,
+      supportMessages, addSupportMessage, updateJobStatus, updateJob, deleteJob,
       fetchCompanyProfile, updateCompanyProfile, uploadCompanyLogo, uploadCompanyNibFile,
       fetchUserProfile, updateUserProfile
     }}>

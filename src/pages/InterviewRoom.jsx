@@ -1,19 +1,23 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MonitorUp, Settings, Mic, MicOff, Video, VideoOff, MessageSquare, X, Send } from 'lucide-react';
-import { useData } from '../context/DataContext';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { MonitorUp, Settings, Mic, MicOff, Video, VideoOff, MessageSquare, X, Send, Users, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export default function InterviewRoom() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const queryParams = new URLSearchParams(location.search);
-  const roomName = queryParams.get('roomName') || 'Interview Session';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-  const { applicants } = useData();
+export default function InterviewRoom() {
+  const { roomId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
-  const applicant = applicants.find(a => a.id === parseInt(id));
+
+  // Room data from DB
+  const [roomData, setRoomData] = useState(null);
+  const [roomLoading, setRoomLoading] = useState(true);
+  const [roomError, setRoomError] = useState(null);
+
+  // Participant presence
+  const [hrdOnline, setHrdOnline] = useState(false);
+  const [pelamarOnline, setPelamarOnline] = useState(false);
 
   // Controls State
   const [isMicOn, setIsMicOn] = useState(true);
@@ -26,12 +30,112 @@ export default function InterviewRoom() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
 
+  // Chat State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [newMessage, setNewMessage] = useState('');
+  const [chatMessages, setChatMessages] = useState([]);
+  const [lastChatId, setLastChatId] = useState(0);
+  const chatEndRef = useRef(null);
+
+  // Settings State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedMic, setSelectedMic] = useState('default');
+  const [selectedCamera, setSelectedCamera] = useState('default');
+
+  // WebRTC Refs & States
+  const localVideoRef = useRef(null);
+  const screenVideoRef = useRef(null);
+  const [localStream, setLocalStream] = useState(null);
+  const [screenStream, setScreenStream] = useState(null);
+
+  // ============================
+  // 1. LOAD ROOM DATA FROM DB
+  // ============================
+  useEffect(() => {
+    async function loadRoom() {
+      try {
+        const res = await fetch(`${API_URL}/interview-rooms/${roomId}`);
+        if (!res.ok) {
+          setRoomError('Room tidak ditemukan.');
+          setRoomLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setRoomData(data);
+        setChatMessages([{ sender: 'system', text: `Selamat datang di ${data.room_name}` }]);
+      } catch (err) {
+        setRoomError('Gagal memuat data room.');
+      } finally {
+        setRoomLoading(false);
+      }
+    }
+    loadRoom();
+  }, [roomId]);
+
+  // ============================
+  // 2. HEARTBEAT - Presence Detection
+  // ============================
+  useEffect(() => {
+    if (!roomData || !user) return;
+
+    const sendHeartbeat = async () => {
+      try {
+        const res = await fetch(`${API_URL}/interview-rooms/${roomId}/heartbeat`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: user.role })
+        });
+        const data = await res.json();
+        setHrdOnline(data.hrdOnline);
+        setPelamarOnline(data.pelamarOnline);
+      } catch (err) {
+        console.error('Heartbeat error:', err);
+      }
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 5000);
+    return () => clearInterval(interval);
+  }, [roomData, user, roomId]);
+
+  // ============================
+  // 3. CHAT POLLING FROM DB
+  // ============================
+  const fetchNewChats = useCallback(async () => {
+    if (!roomData) return;
+    try {
+      const res = await fetch(`${API_URL}/interview-rooms/${roomId}/chats?after_id=${lastChatId}`);
+      const newMsgs = await res.json();
+      if (newMsgs.length > 0) {
+        const mapped = newMsgs.map(m => ({
+          id: m.id,
+          sender: m.sender_id === user?.id ? 'Anda' : m.sender_name,
+          senderRole: m.sender_role,
+          text: m.message
+        }));
+        setChatMessages(prev => [...prev, ...mapped]);
+        setLastChatId(newMsgs[newMsgs.length - 1].id);
+      }
+    } catch (err) {
+      console.error('Chat poll error:', err);
+    }
+  }, [roomData, roomId, lastChatId, user]);
+
+  useEffect(() => {
+    if (!roomData) return;
+    const interval = setInterval(fetchNewChats, 3000);
+    return () => clearInterval(interval);
+  }, [fetchNewChats, roomData]);
+
+  // ============================
+  // 4. SPEECH RECOGNITION
+  // ============================
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.continuous = true;
-      rec.interimResults = true; // Real-time interim results to catch fast speech
+      rec.interimResults = true;
       rec.lang = 'id-ID';
       rec.maxAlternatives = 1;
 
@@ -50,10 +154,8 @@ export default function InterviewRoom() {
 
         if (localFinal.trim()) {
           setTranscript(prev => prev + localFinal);
-          setChatMessages(prev => [...prev, { sender: 'Transkrip Suara (AI)', text: localFinal.trim() }]);
         }
         
-        // Show interim text live in the UI so fast talking is displayed instantly!
         setInterimText(interimTranscript);
       };
 
@@ -86,27 +188,9 @@ export default function InterviewRoom() {
     };
   }, []);
 
-
-  // Chat State
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [newMessage, setNewMessage] = useState('');
-  const [chatMessages, setChatMessages] = useState([
-    { sender: 'system', text: `Selamat datang di ${roomName}` }
-  ]);
-  const chatEndRef = useRef(null);
-
-  // Settings State
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [selectedMic, setSelectedMic] = useState('default');
-  const [selectedCamera, setSelectedCamera] = useState('default');
-
-  // WebRTC Refs & States
-  const localVideoRef = useRef(null);
-  const screenVideoRef = useRef(null);
-  const [localStream, setLocalStream] = useState(null);
-  const [screenStream, setScreenStream] = useState(null);
-
-  // Setup WebRTC Media
+  // ============================
+  // 5. WEBCAM SETUP
+  // ============================
   useEffect(() => {
     let activeStream = null;
     async function setupMedia() {
@@ -127,9 +211,6 @@ export default function InterviewRoom() {
       if (activeStream) {
         activeStream.getTracks().forEach(track => track.stop());
       }
-      if (screenStream) {
-        screenStream.getTracks().forEach(track => track.stop());
-      }
     };
   }, []);
 
@@ -145,7 +226,7 @@ export default function InterviewRoom() {
     }
   }, [isMicOn, isVideoOn, localStream]);
 
-  // Sync Screen Stream to Ref when it changes
+  // Sync Screen Stream
   useEffect(() => {
     if (isScreenSharing && screenStream && screenVideoRef.current) {
       screenVideoRef.current.srcObject = screenStream;
@@ -165,7 +246,6 @@ export default function InterviewRoom() {
         setScreenStream(stream);
         setIsScreenSharing(true);
         
-        // Listen for user stopping screen share via browser UI
         stream.getVideoTracks()[0].onended = () => {
           setIsScreenSharing(false);
           setScreenStream(null);
@@ -175,28 +255,31 @@ export default function InterviewRoom() {
       }
     }
   };
+
+  // Auto-scroll chat
   useEffect(() => {
-    // Auto-scroll chat to bottom
     if (chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [chatMessages, isChatOpen]);
 
-
-
+  // ============================
+  // 6. END SESSION
+  // ============================
   const handleEndSession = async () => {
     if (localStream) localStream.getTracks().forEach(t => t.stop());
     if (screenStream) screenStream.getTracks().forEach(t => t.stop());
     
     if (user?.role === 'Pelamar') {
       try {
-        await fetch(`/api/applications/finish-interview/${user.id}`, { method: 'PUT' });
+        await fetch(`${API_URL}/applications/finish-interview/${user.id}`, { method: 'PUT' });
       } catch (err) {}
       navigate('/pelamar/status-lamaran');
     } else {
-      if (transcript.trim()) {
+      // HRD: save transcript and end room
+      if (transcript.trim() && roomData) {
         try {
-          await fetch(`/api/applicants/${id}/transcript`, {
+          await fetch(`${API_URL}/applicants/${roomData.applicant_id}/transcript`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ transcript: transcript })
@@ -205,20 +288,91 @@ export default function InterviewRoom() {
           console.error("Failed to save transcript:", err);
         }
       }
+      // Update room status to ended
+      try {
+        await fetch(`${API_URL}/interview-rooms/${roomId}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'ended' })
+        });
+      } catch (err) {}
       navigate('/wawancara');
     }
   };
 
-  const handleSendMessage = (e) => {
+  // ============================
+  // 7. SEND CHAT MESSAGE (to DB)
+  // ============================
+  const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !user || !roomData) return;
     const msgText = newMessage.trim();
-    setChatMessages(prev => [...prev, { sender: 'Anda', text: msgText }]);
-    
-    // Auto-append typed notes to the transcript for AI analysis to handle fast talkers
-    setTranscript(prev => prev + `[Catatan HRD]: ${msgText}. `);
     setNewMessage('');
+
+    try {
+      const res = await fetch(`${API_URL}/interview-rooms/${roomId}/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderId: user.id,
+          senderName: user.name || user.role,
+          senderRole: user.role,
+          message: msgText
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setChatMessages(prev => [...prev, { id: data.id, sender: 'Anda', senderRole: user.role, text: msgText }]);
+        setLastChatId(data.id);
+        // Also add to transcript for AI analysis (HRD only)
+        if (user.role === 'HRD') {
+          setTranscript(prev => prev + `[Catatan HRD]: ${msgText}. `);
+        }
+      }
+    } catch (err) {
+      console.error('Send chat error:', err);
+    }
   };
+
+  // ============================
+  // LOADING / ERROR STATES
+  // ============================
+  if (roomLoading) {
+    return (
+      <div className="min-h-screen bg-[#1a1c29] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 size={48} className="text-blue-500 animate-spin" />
+          <p className="text-gray-400 text-lg font-medium">Memuat room interview...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (roomError || !roomData) {
+    return (
+      <div className="min-h-screen bg-[#1a1c29] flex items-center justify-center">
+        <div className="bg-[#242736] p-8 rounded-2xl border border-gray-700 text-center max-w-md">
+          <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X size={32} className="text-red-400" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Room Tidak Ditemukan</h2>
+          <p className="text-gray-400 mb-6">{roomError || 'Room interview ini tidak tersedia atau sudah berakhir.'}</p>
+          <button 
+            onClick={() => navigate(user?.role === 'Pelamar' ? '/pelamar/status-lamaran' : '/wawancara')}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors"
+          >
+            Kembali
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Determine who is the counterpart
+  const isHRD = user?.role === 'HRD' || user?.role === 'Operator';
+  const counterpartName = isHRD ? roomData.applicant_name : roomData.hrd_name;
+  const counterpartOnline = isHRD ? pelamarOnline : hrdOnline;
+  const myOnline = isHRD ? hrdOnline : pelamarOnline;
 
   return (
     <div className="min-h-screen bg-[#1a1c29] flex overflow-hidden relative font-sans">
@@ -227,12 +381,23 @@ export default function InterviewRoom() {
       <div className={`flex-1 flex flex-col items-center justify-between p-6 relative transition-all duration-300 ${isChatOpen ? 'mr-80' : ''}`}>
         
         {/* Room Header Info */}
-        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10 flex flex-col items-center">
-          <div className="text-gray-400 text-sm font-semibold tracking-wider uppercase px-4 py-1.5 bg-black/40 backdrop-blur-md rounded-full border border-gray-800/50 shadow-sm">{roomName}</div>
+        <div className="absolute top-6 left-1/2 transform -translate-x-1/2 z-10 flex flex-col items-center gap-2">
+          <div className="text-gray-400 text-sm font-semibold tracking-wider uppercase px-4 py-1.5 bg-black/40 backdrop-blur-md rounded-full border border-gray-800/50 shadow-sm">{roomData.room_name}</div>
+          <div className="flex items-center gap-3 text-xs">
+            <span className="text-gray-500">Kode: <span className="text-indigo-400 font-mono font-bold">{roomData.room_code}</span></span>
+            <span className="text-gray-600">|</span>
+            <div className="flex items-center gap-1.5">
+              <Users size={12} className="text-gray-500" />
+              <span className={`flex items-center gap-1 ${counterpartOnline ? 'text-green-400' : 'text-gray-500'}`}>
+                <span className={`w-2 h-2 rounded-full ${counterpartOnline ? 'bg-green-400 animate-pulse' : 'bg-gray-600'}`}></span>
+                {counterpartName} {counterpartOnline ? '(Online)' : '(Offline)'}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Live Speech-to-Text Status Indicator */}
-        <div className="w-full max-w-6xl flex items-center justify-between px-4 py-2.5 bg-indigo-950/40 backdrop-blur-md rounded-2xl border border-indigo-500/20 shadow-sm mt-16 -mb-12 z-10">
+        <div className="w-full max-w-6xl flex items-center justify-between px-4 py-2.5 bg-indigo-950/40 backdrop-blur-md rounded-2xl border border-indigo-500/20 shadow-sm mt-20 -mb-12 z-10">
           <div className="flex items-center gap-2">
             <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
@@ -251,16 +416,16 @@ export default function InterviewRoom() {
           </p>
         </div>
 
-        {/* Video Grid */}
+        {/* Video Grid — HRD on LEFT, Pelamar on RIGHT */}
         <div className="w-full max-w-6xl flex-1 flex flex-col md:flex-row items-center justify-center gap-6 mt-16 mb-24 transition-all">
           
-          {/* Local Video (HRD / Pelamar) */}
-          <div className={`aspect-video bg-gray-900 rounded-3xl overflow-hidden relative shadow-lg transition-all ${isScreenSharing ? 'w-1/4 absolute bottom-24 right-6 z-20 border-2 border-blue-500' : 'w-full md:w-1/2'}`}>
+          {/* LEFT: Your video (local camera) */}
+          <div className={`aspect-video bg-gray-900 rounded-3xl overflow-hidden relative shadow-lg transition-all ${isScreenSharing ? 'w-1/4 absolute bottom-24 left-6 z-20 border-2 border-blue-500' : 'w-full md:w-1/2'}`}>
             <video 
               ref={localVideoRef}
               autoPlay 
               playsInline 
-              muted // Always muted locally to prevent echo
+              muted
               className={`w-full h-full object-cover ${!isVideoOn ? 'hidden' : ''}`}
             />
             {!isVideoOn && (
@@ -270,12 +435,13 @@ export default function InterviewRoom() {
                 </div>
               </div>
             )}
-          <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium">
-            Anda ({user?.name || user?.role}) {!isMicOn && ' - Muted'}
-          </div>
+            <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-400"></span>
+              Anda ({user?.name || user?.role}) {!isMicOn && ' - Muted'}
+            </div>
           </div>
 
-          {/* Remote Video (Mock Counterpart) or Screen Share Main view */}
+          {/* RIGHT: Counterpart video area or Screen Share */}
           <div className={`aspect-video bg-gray-900 rounded-3xl overflow-hidden relative shadow-lg transition-all ${isScreenSharing ? 'w-full max-w-5xl' : 'w-full md:w-1/2'}`}>
             {isScreenSharing ? (
               <video 
@@ -285,15 +451,41 @@ export default function InterviewRoom() {
                 className="w-full h-full object-contain bg-black"
               />
             ) : (
-              <img 
-                src={user?.id == applicant?.user_id ? "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" : "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"}
-                alt="Counterpart Video" 
-                className="w-full h-full object-cover"
-              />
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
+                {counterpartOnline ? (
+                  <>
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-3xl font-bold shadow-lg ring-4 ring-green-400/30">
+                      {counterpartName?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                    <p className="text-white font-semibold mt-4 text-lg">{counterpartName}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse"></span>
+                      <span className="text-green-400 text-sm font-medium">Sedang Online di Room</span>
+                    </div>
+                    <p className="text-gray-500 text-xs mt-3 max-w-xs text-center">Video peer-to-peer membutuhkan WebRTC signaling server. Saat ini kedua pihak berada di room yang sama dan dapat berkomunikasi via chat.</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-24 h-24 rounded-full bg-gray-700 flex items-center justify-center text-gray-400 text-3xl font-bold">
+                      {counterpartName?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                    <p className="text-gray-400 font-semibold mt-4 text-lg">{counterpartName}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-gray-500"></span>
+                      <span className="text-gray-500 text-sm font-medium">Belum Bergabung</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-4 bg-gray-800 border border-gray-700 px-4 py-2 rounded-full">
+                      <Loader2 size={14} className="text-blue-400 animate-spin" />
+                      <span className="text-gray-400 text-xs">Menunggu {counterpartName} bergabung...</span>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
-            <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium">
-            {isScreenSharing ? 'Layar Anda' : (user?.role === 'Pelamar' ? 'HRD' : (applicant?.name || 'Pelamar'))}
-          </div>
+            <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${counterpartOnline ? 'bg-green-400' : 'bg-gray-500'}`}></span>
+              {isScreenSharing ? 'Layar Anda' : counterpartName}
+            </div>
           </div>
         </div>
 
@@ -372,10 +564,22 @@ export default function InterviewRoom() {
             <X size={18} />
           </button>
         </div>
+
+        {/* Online Status Bar */}
+        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${hrdOnline ? 'bg-green-400' : 'bg-gray-300'}`}></span>
+            <span className={hrdOnline ? 'text-green-700 font-medium' : 'text-gray-400'}>{isHRD ? 'Anda (HRD)' : roomData.hrd_name}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${pelamarOnline ? 'bg-green-400' : 'bg-gray-300'}`}></span>
+            <span className={pelamarOnline ? 'text-green-700 font-medium' : 'text-gray-400'}>{!isHRD ? 'Anda (Pelamar)' : roomData.applicant_name}</span>
+          </div>
+        </div>
         
         <div className="flex-1 p-4 overflow-y-auto bg-white space-y-4">
           {chatMessages.map((msg, idx) => (
-            <div key={idx} className={`flex flex-col ${msg.sender === 'Anda' ? 'items-end' : msg.sender === 'system' ? 'items-center' : 'items-start'}`}>
+            <div key={msg.id || idx} className={`flex flex-col ${msg.sender === 'Anda' ? 'items-end' : msg.sender === 'system' ? 'items-center' : 'items-start'}`}>
               {msg.sender === 'system' ? (
                 <span className="text-xs text-gray-400 bg-gray-50 px-3 py-1 rounded-full">{msg.text}</span>
               ) : (
@@ -383,7 +587,7 @@ export default function InterviewRoom() {
                   <p className="text-sm">{msg.text}</p>
                 </div>
               )}
-              {msg.sender !== 'system' && <span className="text-[10px] text-gray-400 mt-1 mx-1">{msg.sender}</span>}
+              {msg.sender !== 'system' && <span className="text-[10px] text-gray-400 mt-1 mx-1">{msg.sender}{msg.senderRole ? ` (${msg.senderRole})` : ''}</span>}
             </div>
           ))}
           <div ref={chatEndRef} />

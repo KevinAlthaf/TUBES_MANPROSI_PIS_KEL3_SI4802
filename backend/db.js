@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import pg from 'pg';
 const { Pool } = pg;
 
@@ -39,7 +40,10 @@ const db = {
       // For SELECT/UPDATE/DELETE
       return [res.rows, res.fields];
     } catch (err) {
-      console.error('Database query error:', err.message, '\\nSQL:', pgSql, '\\nValues:', pgValues);
+      // Suppress logging for expected migration errors (duplicate column or table)
+      if (err.code !== '42701' && err.code !== '42P07') {
+        console.error('Database query error:', err.message || err, '\nSQL:', pgSql, '\nValues:', pgValues);
+      }
       throw err;
     }
   }
