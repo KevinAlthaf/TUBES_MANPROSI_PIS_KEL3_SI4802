@@ -1,7 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, CheckCircle, XCircle, BrainCircuit, Star, AlertCircle, Video, Sparkles, Loader2, Edit } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+// Sub-component: Button to enter interview room (fetches room ID from DB)
+function EnterRoomButton({ applicantId }) {
+  const navigate = useNavigate();
+  const [roomId, setRoomId] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_URL}/interview-rooms/applicant/${applicantId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.id) setRoomId(data.id);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [applicantId]);
+
+  if (loading) {
+    return (
+      <div className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-100 text-gray-400 rounded-xl text-sm font-bold">
+        <Loader2 size={16} className="animate-spin" /> Memuat room...
+      </div>
+    );
+  }
+
+  if (!roomId) {
+    return (
+      <Link 
+        to={`/data-pelamar`}
+        className="w-full flex items-center justify-center gap-2 py-2.5 bg-gray-200 text-gray-600 rounded-xl hover:bg-gray-300 transition-colors text-sm font-bold"
+      >
+        <Video size={18} /> Buat Room Dulu di Halaman Pelamar
+      </Link>
+    );
+  }
+
+  return (
+    <button 
+      onClick={() => navigate(`/interview-room/${roomId}`)}
+      className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-bold shadow-sm"
+    >
+      <Video size={18} /> Masuk Ruang Interview
+    </button>
+  );
+}
 
 export default function Wawancara() {
   const { applicants, jobs, updateApplicantStatus, addInterviewFeedback } = useData();
@@ -266,12 +313,7 @@ export default function Wawancara() {
 
                   {app.status === 'Interview' && (
                     <div className="px-5 pb-4 bg-gray-50/50">
-                      <Link 
-                        to={`/interview-room/${app.id}`}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-bold shadow-sm"
-                      >
-                        <Video size={18} /> Masuk Ruang Interview
-                      </Link>
+                      <EnterRoomButton applicantId={app.id} />
                     </div>
                   )}
 

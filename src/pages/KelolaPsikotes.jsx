@@ -1,179 +1,441 @@
-import React, { useState } from 'react';
-import { FileQuestion, Plus, Trash2, Edit, UploadCloud, CheckCircle, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { FileQuestion, Plus, Trash2, Edit, X, Check } from 'lucide-react';
 import { useData } from '../context/DataContext';
 
-const PREDEFINED_PACKAGES = [
-  {
-    id: 1,
-    name: "Paket A (General Intelligence & Logic)",
-    status: "Draft",
-    questions: [
-      { q: "Jika semua burung bisa terbang, dan Penguin adalah burung, apakah Penguin bisa terbang?", a: "Tergantung konteks definisi terbang (Pengecualian)." },
-      { q: "Lanjutkan deret angka ini: 2, 4, 8, 16, ...", a: "32" },
-      { q: "Bagaimana Anda menangani konflik dengan rekan kerja?", a: "Mendengarkan secara objektif dan mencari jalan tengah." }
-    ]
-  },
-  {
-    id: 2,
-    name: "Paket B (Numerical & Analytical)",
-    status: "Draft",
-    questions: [
-      { q: "Sebuah kereta melaju dengan kecepatan 80km/jam. Jarak tempuh 200km. Berapa jam waktu yang dibutuhkan?", a: "2.5 Jam" },
-      { q: "Jika 5 pekerja bisa menyelesaikan proyek dalam 10 hari, berapa lama jika hanya ada 2 pekerja?", a: "25 Hari" },
-      { q: "Berapa 15% dari 200?", a: "30" }
-    ]
-  }
-];
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export default function KelolaPsikotes() {
   const { addPsychotestPackage } = useData();
-  const [packages, setPackages] = useState(PREDEFINED_PACKAGES);
+  const [packages, setPackages] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [editingPackage, setEditingPackage] = useState(null);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [newPackageName, setNewPackageName] = useState('');
+  
+  // Question Form State
+  const [newQuestionText, setNewQuestionText] = useState('');
+  const [optionA, setOptionA] = useState('');
+  const [optionB, setOptionB] = useState('');
+  const [optionC, setOptionC] = useState('');
+  const [optionD, setOptionD] = useState('');
+  const [newCorrectAnswer, setNewCorrectAnswer] = useState('A');
 
-  const handleEdit = (pkg) => {
-    // Clone to avoid direct mutation
-    setEditingPackage(JSON.parse(JSON.stringify(pkg)));
+  // Toast Notification State
+  const [toastMessage, setToastMessage] = useState('');
+
+  const showToast = (message) => {
+    setToastMessage(message);
+    setTimeout(() => {
+      setToastMessage('');
+    }, 3000);
   };
 
-  const handleQuestionChange = (index, field, value) => {
-    const updatedQs = [...editingPackage.questions];
-    updatedQs[index][field] = value;
-    setEditingPackage({ ...editingPackage, questions: updatedQs });
+  // Fetch Packages with questions on mount
+  const fetchPackages = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/packages-full`);
+      if (res.ok) {
+        const data = await res.json();
+        setPackages(data);
+      } else {
+        showToast("Gagal mengambil data paket psikotes.");
+      }
+    } catch (error) {
+      console.error("Error fetching packages:", error);
+      showToast("Koneksi ke backend gagal.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const saveEdits = () => {
-    setPackages(packages.map(p => p.id === editingPackage.id ? editingPackage : p));
-    setEditingPackage(null);
+  useEffect(() => {
+    fetchPackages();
+  }, []);
+
+  const handleCreatePackage = async (e) => {
+    e.preventDefault();
+    if (!newPackageName.trim()) return;
+
+    try {
+      const res = await fetch(`${API_URL}/packages-full`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newPackageName.trim() })
+      });
+
+      if (res.ok) {
+        const newPkg = await res.json();
+        setPackages(prev => [newPkg, ...prev]);
+        setNewPackageName('');
+        showToast("Paket baru berhasil dibuat!");
+      } else {
+        const err = await res.json();
+        alert("Gagal membuat paket: " + (err.error || "Terjadi kesalahan"));
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Koneksi backend gagal.");
+    }
   };
 
-  const handlePublish = (pkg) => {
-    // "Upload" it so HR can see it
-    addPsychotestPackage(pkg.name);
-    setPackages(packages.map(p => p.id === pkg.id ? { ...p, status: 'Published' } : p));
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  const handleDeletePackage = async (id, name) => {
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus paket "${name}"? Semua pertanyaan di dalamnya akan ikut terhapus.`)) return;
+
+    try {
+      const res = await fetch(`${API_URL}/packages-full/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        setPackages(prev => prev.filter(p => p.id !== id));
+        showToast("Paket berhasil dihapus.");
+        if (editingPackage && editingPackage.id === id) {
+          setEditingPackage(null);
+        }
+      } else {
+        showToast("Gagal menghapus paket.");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Koneksi backend gagal.");
+    }
+  };
+
+  const handleAddQuestion = async (packageId) => {
+    if (!newQuestionText.trim()) {
+      alert("Teks pertanyaan tidak boleh kosong.");
+      return;
+    }
+    if (!optionA.trim() || !optionB.trim() || !optionC.trim() || !optionD.trim()) {
+      alert("Semua pilihan ganda (A, B, C, D) harus diisi.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/packages-full/${packageId}/questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionText: newQuestionText.trim(),
+          correctAnswer: newCorrectAnswer,
+          options: [optionA.trim(), optionB.trim(), optionC.trim(), optionD.trim()]
+        })
+      });
+
+      if (res.ok) {
+        const newQuestion = await res.json();
+        
+        // Update local states
+        setEditingPackage(prev => ({
+          ...prev,
+          questions: [...prev.questions, newQuestion]
+        }));
+        setPackages(prev => prev.map(p => p.id === packageId ? { ...p, questions: [...p.questions, newQuestion] } : p));
+        
+        setNewQuestionText('');
+        setOptionA('');
+        setOptionB('');
+        setOptionC('');
+        setOptionD('');
+        setNewCorrectAnswer('A');
+        showToast("Pertanyaan pilihan ganda berhasil ditambahkan!");
+      } else {
+        showToast("Gagal menyimpan pertanyaan.");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Koneksi backend gagal.");
+    }
+  };
+
+  const handleDeleteQuestion = async (packageId, questionId) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus pertanyaan ini?")) return;
+
+    try {
+      const res = await fetch(`${API_URL}/questions-full/${questionId}`, {
+        method: 'DELETE'
+      });
+
+      if (res.ok) {
+        setEditingPackage(prev => ({
+          ...prev,
+          questions: prev.questions.filter(q => q.id !== questionId)
+        }));
+        setPackages(prev => prev.map(p => p.id === packageId ? { ...p, questions: p.questions.filter(q => q.id !== questionId) } : p));
+        showToast("Pertanyaan berhasil dihapus.");
+      } else {
+        showToast("Gagal menghapus pertanyaan.");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Koneksi backend gagal.");
+    }
   };
 
   return (
     <div className="space-y-6 relative">
-      {showSuccess && (
-        <div className="fixed top-10 right-10 bg-gray-900 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-right-8 duration-300">
-          <CheckCircle className="text-green-400" size={24} />
-          <div>
-            <p className="font-bold">Berhasil Diupload!</p>
-            <p className="text-sm text-gray-300">Paket psikotes kini bisa digunakan oleh HRD.</p>
-          </div>
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <Check size={18} className="text-green-400" />
+          <span className="text-sm font-medium">{toastMessage}</span>
         </div>
       )}
 
+      {/* Header */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
         <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <FileQuestion className="text-blue-500" />
           Kelola Paket Psikotes
         </h2>
-        <p className="text-gray-500 text-sm mt-1">Review, edit, dan upload paket soal psikotes agar siap digunakan HRD.</p>
+        <p className="text-gray-500 text-sm mt-1">Buat, kelola, dan tambahkan pertanyaan pilihan ganda psikotes untuk pelamar kerja.</p>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-5 border-b border-gray-100 bg-gray-50">
-          <h3 className="font-bold text-gray-900">Daftar Pre-defined Paket</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column: Create Form */}
+        <div className="lg:col-span-1">
+          <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm sticky top-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Buat Paket Soal Baru</h3>
+            <form onSubmit={handleCreatePackage} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Nama Label Soal</label>
+                <input 
+                  type="text" 
+                  value={newPackageName}
+                  onChange={(e) => setNewPackageName(e.target.value)}
+                  placeholder="Contoh: SOAL MATEMATIKA"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                  required
+                />
+              </div>
+              <button 
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
+              >
+                <Plus size={18} />
+                Buat Paket
+              </button>
+            </form>
+          </div>
         </div>
-        <div className="divide-y divide-gray-100">
-          {packages.map((pkg) => (
-            <div key={pkg.id} className="p-6 hover:bg-gray-50 transition-colors flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <FileQuestion size={24} />
-                </div>
-                <div>
-                  <h4 className="font-bold text-gray-900 text-lg">{pkg.name}</h4>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-gray-500 text-sm">{pkg.questions.length} Pertanyaan</span>
-                    <span className="text-gray-300">&bull;</span>
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${pkg.status === 'Published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                      {pkg.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-3 w-full md:w-auto">
-                <button 
-                  onClick={() => handleEdit(pkg)}
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-medium text-sm"
-                >
-                  <Edit size={16} /> Review & Edit
-                </button>
-                <button 
-                  onClick={() => handlePublish(pkg)}
-                  disabled={pkg.status === 'Published'}
-                  className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${pkg.status === 'Published' ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                >
-                  <UploadCloud size={16} /> {pkg.status === 'Published' ? 'Telah Diupload' : 'Upload ke HRD'}
-                </button>
-              </div>
+
+        {/* Right Column: Packages List */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-5 border-b border-gray-100 bg-gray-50/50">
+              <h3 className="font-bold text-gray-900">Daftar Paket Psikotes</h3>
             </div>
-          ))}
+            {isLoading ? (
+              <div className="p-8 text-center text-gray-500 text-sm">Loading data paket...</div>
+            ) : packages.length === 0 ? (
+              <div className="p-16 text-center text-gray-500">
+                <FileQuestion size={40} className="mx-auto mb-3 text-gray-300" />
+                <p className="font-semibold text-gray-600">Belum ada paket soal</p>
+                <p className="text-xs text-gray-400 mt-1">Gunakan panel di samping untuk membuat paket baru.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {packages.map((pkg) => (
+                  <div key={pkg.id} className="p-6 hover:bg-gray-50/50 transition-colors flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <FileQuestion size={24} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-950 text-base">{pkg.name}</h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-gray-550 text-xs font-medium bg-gray-100 px-2 py-0.5 rounded-md">
+                            {pkg.questions?.length || 0} Pertanyaan
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                      <button 
+                        onClick={() => {
+                          setEditingPackage(pkg);
+                          setNewQuestionText('');
+                          setOptionA('');
+                          setOptionB('');
+                          setOptionC('');
+                          setOptionD('');
+                          setNewCorrectAnswer('A');
+                        }}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-semibold text-xs"
+                      >
+                        <Edit size={14} /> Kelola Pertanyaan
+                      </button>
+                      <button 
+                        onClick={() => handleDeletePackage(pkg.id, pkg.name)}
+                        className="p-2 border border-red-100 text-red-500 rounded-lg hover:bg-red-50 transition-colors"
+                        title="Hapus Paket"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Edit Modal */}
+      {/* Edit / Manage Questions Modal */}
       {editingPackage && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 bg-black/55 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-300">
+            {/* Modal Header */}
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Review & Edit Soal</h3>
-                <p className="text-gray-500 text-sm mt-1">{editingPackage.name}</p>
+                <h3 className="text-lg font-bold text-gray-950">Kelola Pertanyaan Psikotes</h3>
+                <p className="text-gray-500 text-xs mt-1">Paket: <span className="font-bold text-blue-650">{editingPackage.name}</span></p>
               </div>
-              <button onClick={() => setEditingPackage(null)} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-200 transition-colors">
+              <button onClick={() => setEditingPackage(null)} className="text-gray-400 hover:text-gray-655 p-2 rounded-full hover:bg-gray-200 transition-colors">
                 <X size={20} />
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-gray-50">
-              {editingPackage.questions.map((item, idx) => (
-                <div key={idx} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="font-bold text-blue-600">Soal {idx + 1}</span>
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-6 bg-gray-50/50">
+              {/* Form to Add Question One-by-One */}
+              <div className="bg-white border border-blue-100 rounded-xl p-5 shadow-sm space-y-4">
+                <h4 className="font-bold text-blue-900 text-sm flex items-center gap-1.5">
+                  <Plus size={16} /> Tambah Pertanyaan Pilihan Ganda Baru
+                </h4>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Teks Pertanyaan</label>
+                    <textarea 
+                      value={newQuestionText}
+                      onChange={(e) => setNewQuestionText(e.target.value)}
+                      placeholder="Masukkan pertanyaan psikotes pilihan ganda di sini..."
+                      className="w-full border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium text-gray-800 bg-white"
+                      rows="2"
+                    />
                   </div>
-                  <div className="space-y-4">
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Pertanyaan</label>
-                      <textarea 
-                        value={item.q}
-                        onChange={(e) => handleQuestionChange(idx, 'q', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium text-gray-800 bg-gray-50 focus:bg-white transition-colors"
-                        rows="2"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Kunci Jawaban Benar</label>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Pilihan A</label>
                       <input 
                         type="text"
-                        value={item.a}
-                        onChange={(e) => handleQuestionChange(idx, 'a', e.target.value)}
-                        className="w-full border border-green-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium text-green-800 bg-green-50 focus:bg-white transition-colors"
+                        value={optionA}
+                        onChange={(e) => setOptionA(e.target.value)}
+                        placeholder="Pilihan A"
+                        className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Pilihan B</label>
+                      <input 
+                        type="text"
+                        value={optionB}
+                        onChange={(e) => setOptionB(e.target.value)}
+                        placeholder="Pilihan B"
+                        className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Pilihan C</label>
+                      <input 
+                        type="text"
+                        value={optionC}
+                        onChange={(e) => setOptionC(e.target.value)}
+                        placeholder="Pilihan C"
+                        className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Pilihan D</label>
+                      <input 
+                        type="text"
+                        value={optionD}
+                        onChange={(e) => setOptionD(e.target.value)}
+                        placeholder="Pilihan D"
+                        className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
                       />
                     </div>
                   </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Kunci Jawaban Benar</label>
+                    <select 
+                      value={newCorrectAnswer}
+                      onChange={(e) => setNewCorrectAnswer(e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white font-medium"
+                    >
+                      <option value="A">Pilihan A</option>
+                      <option value="B">Pilihan B</option>
+                      <option value="C">Pilihan C</option>
+                      <option value="D">Pilihan D</option>
+                    </select>
+                  </div>
+
+                  <button 
+                    type="button"
+                    onClick={() => handleAddQuestion(editingPackage.id)}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  >
+                    <Plus size={14} /> Tambahkan Pertanyaan
+                  </button>
                 </div>
-              ))}
+              </div>
+
+              {/* Questions List inside this package */}
+              <div className="space-y-4">
+                <h4 className="font-bold text-gray-800 text-sm">Daftar Soal Saat Ini ({editingPackage.questions?.length || 0})</h4>
+                {(!editingPackage.questions || editingPackage.questions.length === 0) ? (
+                  <p className="text-center text-gray-550 text-xs py-8 bg-white rounded-xl border border-dashed border-gray-200 font-medium">
+                    Belum ada pertanyaan. Silakan tambahkan pertanyaan baru di atas.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {editingPackage.questions.map((item, idx) => (
+                      <div key={item.id || idx} className="bg-white border border-gray-150 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative">
+                        <button 
+                          onClick={() => handleDeleteQuestion(editingPackage.id, item.id)}
+                          className="absolute top-4 right-4 text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Hapus Soal"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                        <div className="font-bold text-blue-600 text-xs mb-2">SOAL #{idx + 1}</div>
+                        <p className="text-gray-800 text-sm whitespace-pre-wrap pr-8 mb-3 font-semibold leading-relaxed">
+                          {item.q}
+                        </p>
+                        
+                        {item.options && item.options.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 bg-gray-55/40 p-3 rounded-lg border border-gray-100">
+                            {item.options.map((opt, i) => {
+                              const letter = String.fromCharCode(65 + i);
+                              const isCorrect = item.a === letter;
+                              return (
+                                <div key={i} className={`text-xs p-2 rounded-md font-medium border ${isCorrect ? 'bg-green-50 border-green-200 text-green-800' : 'bg-white border-gray-150 text-gray-700'}`}>
+                                  <span className="font-bold">{letter}.</span> {opt} {isCorrect && '✔️'}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : item.a && (
+                          <div className="bg-green-50 text-green-800 text-xs px-3 py-1.5 rounded-lg font-medium inline-block border border-green-100 mb-3">
+                            <span className="font-bold text-green-900">Petunjuk/Kunci:</span> {item.a}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div className="p-6 border-t border-gray-100 flex justify-end gap-3 bg-white rounded-b-2xl">
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-100 flex justify-end bg-white rounded-b-2xl">
               <button 
                 onClick={() => setEditingPackage(null)}
-                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-medium transition-colors"
+                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-bold transition-colors text-xs"
               >
-                Batal
-              </button>
-              <button 
-                onClick={saveEdits}
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-              >
-                Simpan Perubahan
+                Selesai & Tutup
               </button>
             </div>
           </div>

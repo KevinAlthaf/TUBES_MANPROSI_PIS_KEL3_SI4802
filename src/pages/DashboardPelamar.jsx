@@ -12,21 +12,46 @@ export default function DashboardPelamar() {
   const navigate = useNavigate();
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchLocation, setSearchLocation] = useState('');
   const [cvMatchMode, setCvMatchMode] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
   const [isApplying, setIsApplying] = useState(false);
   const [showApplySuccess, setShowApplySuccess] = useState(false);
+  const [visibleJobsCount, setVisibleJobsCount] = useState(6);
+
+  // Advanced filters state
+  const [filterEdu, setFilterEdu] = useState([]);
+  const [filterSistemKerja, setFilterSistemKerja] = useState([]);
+  const [filterGender, setFilterGender] = useState([]);
+  const [filterJenisPekerjaan, setFilterJenisPekerjaan] = useState([]);
+  const [sortBy, setSortBy] = useState('rekomendasi');
 
   // Helper to safely get jobs
   const activeJobs = (jobs || []).filter(j => j.status === 'Active' || j.status === 'Dibuka');
+
+  const handleToggleFilter = (item, list, setList) => {
+    if (list.includes(item)) {
+      setList(list.filter(x => x !== item));
+    } else {
+      setList([...list, item]);
+    }
+  };
+
+  const handleResetFilters = () => {
+    setFilterEdu([]);
+    setFilterSistemKerja([]);
+    setFilterGender([]);
+    setFilterJenisPekerjaan([]);
+    setSortBy('rekomendasi');
+  };
 
   const handleCvMatch = () => {
     if (!user?.profile?.cvUrl) {
       addToast("Anda belum mengunggah CV. Silakan unggah di halaman Profil.", "error");
       navigate('/pelamar/profile');
     } else {
-      setCvMatchMode(true);
+      setCvMatchMode(!cvMatchMode);
     }
   };
 
@@ -69,16 +94,124 @@ export default function DashboardPelamar() {
     }
   };
 
-  // Mock categorizations
-  let promotedJobs = activeJobs.slice(0, 3);
-  let s1Jobs = activeJobs.filter(j => j.pendidikan?.toLowerCase().includes('s1')).slice(0, 3);
-  let otherJobs = activeJobs.slice(0, 4);
+  // Advanced Search & Filter Logic
+  const getFilteredJobs = () => {
+    let filtered = [...activeJobs];
 
-  if (cvMatchMode) {
-    promotedJobs = activeJobs.filter(j => Math.random() > 0.5).slice(0, 3);
-    s1Jobs = [];
-    otherJobs = activeJobs.filter(j => Math.random() > 0.5).slice(0, 4);
-  }
+    // Search Term Filter
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      filtered = filtered.filter(j => 
+        (j.title || '').toLowerCase().includes(q) || 
+        (j.company_name || 'PT. Inovasi Teknologi').toLowerCase().includes(q) ||
+        (j.department || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Location Filter
+    if (searchLocation) {
+      const loc = searchLocation.toLowerCase();
+      filtered = filtered.filter(j => 
+        (j.kota || '').toLowerCase().includes(loc)
+      );
+    }
+
+    // Education Filter
+    if (filterEdu.length > 0) {
+      filtered = filtered.filter(j => {
+        const jEdu = (j.pendidikan || '').toLowerCase();
+        return filterEdu.some(edu => {
+          const normEdu = edu.toLowerCase();
+          if (normEdu.includes('tidak') || normEdu.includes('bebas')) {
+            return jEdu === '' || jEdu.includes('tidak') || jEdu.includes('bebas') || jEdu.includes('semua');
+          }
+          if (normEdu === 'sma/smk/ma') return jEdu.includes('sma') || jEdu.includes('smk') || jEdu.includes('ma') || jEdu.includes('slta');
+          if (normEdu === 'smp/mts') return jEdu.includes('smp') || jEdu.includes('mts');
+          return jEdu.includes(normEdu);
+        });
+      });
+    }
+
+    // Kebijakan Kerja (Sistem Kerja) Filter
+    if (filterSistemKerja.length > 0) {
+      filtered = filtered.filter(j => {
+        const js = (j.sistem_kerja || '').toLowerCase();
+        return filterSistemKerja.some(option => {
+          if (option.includes('Remote')) return js.includes('wfh') || js.includes('remote') || js.includes('home');
+          if (option.includes('WFO')) return js.includes('wfo') || js.includes('office');
+          if (option.includes('Hybrid')) return js.includes('hybrid');
+          if (option.includes('lapangan')) return js.includes('lapangan') || js.includes('field');
+          return false;
+        });
+      });
+    }
+
+    // Gender Filter
+    if (filterGender.length > 0) {
+      filtered = filtered.filter(j => {
+        const jg = (j.gender || '').toLowerCase();
+        return filterGender.some(option => {
+          if (option.includes('Semua')) return jg.includes('semua') || jg.includes('keduanya') || jg.includes('pria & wanita');
+          if (option.includes('Laki-laki')) return jg.includes('laki') || jg.includes('pria') || jg.includes('semua') || jg.includes('keduanya');
+          if (option.includes('Perempuan')) return jg.includes('perempuan') || jg.includes('wanita') || jg.includes('semua') || jg.includes('keduanya');
+          return false;
+        });
+      });
+    }
+
+    // Tipe Kerja (Jenis Pekerjaan) Filter
+    if (filterJenisPekerjaan.length > 0) {
+      filtered = filtered.filter(j => {
+        const jp = (j.jenis_pekerjaan || '').toLowerCase();
+        return filterJenisPekerjaan.some(option => {
+          const optLower = option.toLowerCase();
+          if (optLower === 'kontrak') return jp.includes('contract') || jp.includes('kontrak');
+          if (optLower === 'magang') return jp.includes('intern') || jp.includes('magang');
+          return jp.includes(optLower);
+        });
+      });
+    }
+
+    // Sort order & CV Match Score mapping
+    if (cvMatchMode && user?.profile) {
+      const skillsList = Array.isArray(user.profile.skills) ? user.profile.skills : [];
+      filtered = filtered.map(j => {
+        let score = 65; // baseline
+        // match skills
+        skillsList.forEach(s => {
+          if ((j.deskripsi || '').toLowerCase().includes(s.toLowerCase()) || (j.title || '').toLowerCase().includes(s.toLowerCase())) {
+            score += 10;
+          }
+        });
+        // match education
+        const userEdu = (user.profile.pendidikan_terakhir || '').toLowerCase();
+        const jEdu = (j.pendidikan || '').toLowerCase();
+        if (userEdu && jEdu && userEdu.includes(jEdu)) {
+          score += 10;
+        }
+        score = Math.min(98, score);
+        return { ...j, tempScore: score };
+      });
+
+      if (sortBy === 'rekomendasi') {
+        filtered.sort((a, b) => b.tempScore - a.tempScore);
+      }
+    }
+
+    if (sortBy === 'terbaru') {
+      filtered.sort((a, b) => b.id - a.id);
+    }
+
+    return filtered;
+  };
+
+  const filteredJobsList = getFilteredJobs();
+  const isAnyFilterActive = searchTerm || searchLocation || filterEdu.length > 0 || filterSistemKerja.length > 0 || filterGender.length > 0 || filterJenisPekerjaan.length > 0 || cvMatchMode;
+
+  // Standard categorizations (for initial non-filtered view)
+  const promotedJobs = activeJobs.slice(0, 3);
+  const s1Jobs = activeJobs.filter(j => j.pendidikan?.toLowerCase().includes('s1')).slice(0, 3);
+  const otherJobs = activeJobs.slice(0, visibleJobsCount);
 
   // Check if profile is fully complete for banner logic
   const isProfileComplete = user?.profile?.nama_lengkap && user?.profile?.cvUrl && user?.profile?.kota_domisili;
@@ -141,14 +274,26 @@ export default function DashboardPelamar() {
                 <h3 className="font-semibold text-gray-900 mb-3 text-sm">Urutkan</h3>
                 <div className="flex gap-2">
                   <label className="flex-1 cursor-pointer">
-                    <input type="radio" name="sort" className="peer hidden" defaultChecked />
-                    <div className="text-center px-4 py-2 border border-blue-500 bg-blue-50 text-blue-600 rounded-full text-sm font-medium peer-checked:bg-blue-600 peer-checked:text-white transition-colors">
-                      Rekomendasi KitaLulus
+                    <input 
+                      type="radio" 
+                      name="sort" 
+                      className="peer hidden" 
+                      checked={sortBy === 'rekomendasi'} 
+                      onChange={() => setSortBy('rekomendasi')} 
+                    />
+                    <div className="text-center px-4 py-2 border border-gray-200 bg-white text-gray-600 rounded-full text-sm font-medium peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 transition-colors">
+                      Rekomendasi
                     </div>
                   </label>
                   <label className="flex-1 cursor-pointer">
-                    <input type="radio" name="sort" className="peer hidden" />
-                    <div className="text-center px-4 py-2 border border-gray-200 bg-white text-gray-600 rounded-full text-sm font-medium peer-checked:bg-blue-600 peer-checked:text-white transition-colors">
+                    <input 
+                      type="radio" 
+                      name="sort" 
+                      className="peer hidden" 
+                      checked={sortBy === 'terbaru'} 
+                      onChange={() => setSortBy('terbaru')} 
+                    />
+                    <div className="text-center px-4 py-2 border border-gray-200 bg-white text-gray-600 rounded-full text-sm font-medium peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 transition-colors">
                       Terbaru
                     </div>
                   </label>
@@ -161,7 +306,12 @@ export default function DashboardPelamar() {
                 <div className="flex flex-wrap gap-2">
                   {['SMP/MTS', 'SMA/SMK/MA', 'D3', 'S1', 'S2', 'S3', 'Tidak Ada Ketentuan'].map(edu => (
                     <label key={edu} className="cursor-pointer">
-                      <input type="checkbox" className="peer hidden" />
+                      <input 
+                        type="checkbox" 
+                        className="peer hidden" 
+                        checked={filterEdu.includes(edu)} 
+                        onChange={() => handleToggleFilter(edu, filterEdu, setFilterEdu)} 
+                      />
                       <div className="px-4 py-1.5 border border-gray-200 rounded-full text-sm text-gray-600 peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 transition-colors">
                         {edu}
                       </div>
@@ -176,7 +326,12 @@ export default function DashboardPelamar() {
                 <div className="flex flex-wrap gap-2">
                   {['Kerja dari manapun (Remote)', 'Kerja dari kantor (WFO)', 'Campuran (Hybrid)', 'Kerja di lapangan'].map(tipe => (
                     <label key={tipe} className="cursor-pointer">
-                      <input type="checkbox" className="peer hidden" />
+                      <input 
+                        type="checkbox" 
+                        className="peer hidden" 
+                        checked={filterSistemKerja.includes(tipe)} 
+                        onChange={() => handleToggleFilter(tipe, filterSistemKerja, setFilterSistemKerja)} 
+                      />
                       <div className="px-4 py-1.5 border border-gray-200 rounded-full text-sm text-gray-600 peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 transition-colors">
                         {tipe}
                       </div>
@@ -191,7 +346,12 @@ export default function DashboardPelamar() {
                 <div className="flex flex-wrap gap-2">
                   {['Semua Jenis Kelamin', 'Laki-laki', 'Perempuan'].map(jk => (
                     <label key={jk} className="cursor-pointer">
-                      <input type="checkbox" className="peer hidden" />
+                      <input 
+                        type="checkbox" 
+                        className="peer hidden" 
+                        checked={filterGender.includes(jk)} 
+                        onChange={() => handleToggleFilter(jk, filterGender, setFilterGender)} 
+                      />
                       <div className="px-4 py-1.5 border border-gray-200 rounded-full text-sm text-gray-600 peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 transition-colors">
                         {jk}
                       </div>
@@ -206,7 +366,12 @@ export default function DashboardPelamar() {
                 <div className="flex flex-wrap gap-2">
                   {['Freelance', 'Full-Time', 'Part-Time', 'Magang', 'Kontrak'].map(tipe => (
                     <label key={tipe} className="cursor-pointer">
-                      <input type="checkbox" className="peer hidden" />
+                      <input 
+                        type="checkbox" 
+                        className="peer hidden" 
+                        checked={filterJenisPekerjaan.includes(tipe)} 
+                        onChange={() => handleToggleFilter(tipe, filterJenisPekerjaan, setFilterJenisPekerjaan)} 
+                      />
                       <div className="px-4 py-1.5 border border-gray-200 rounded-full text-sm text-gray-600 peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-600 transition-colors">
                         {tipe}
                       </div>
@@ -217,7 +382,7 @@ export default function DashboardPelamar() {
 
             </div>
             <div className="p-4 border-t border-gray-100 bg-white flex gap-3">
-              <button onClick={() => setIsFilterOpen(false)} className="flex-1 py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors">Reset</button>
+              <button onClick={handleResetFilters} className="flex-1 py-3 bg-gray-100 text-gray-700 font-semibold rounded-xl hover:bg-gray-200 transition-colors">Reset</button>
               <button onClick={() => setIsFilterOpen(false)} className="flex-[2] py-3 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors">Terapkan Filter</button>
             </div>
           </div>
@@ -317,6 +482,8 @@ export default function DashboardPelamar() {
                 type="text" 
                 placeholder="Semua Lokasi" 
                 className="w-full text-gray-800 focus:outline-none placeholder-gray-400"
+                value={searchLocation}
+                onChange={(e) => setSearchLocation(e.target.value)}
               />
             </div>
             <button className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-xl transition-colors whitespace-nowrap shadow-sm">
@@ -359,89 +526,119 @@ export default function DashboardPelamar() {
           </div>
         )}
 
-        {/* Section 1 */}
-        <div className="mb-10">
-          <div className="flex justify-between items-end mb-4">
-            <h2 className="text-xl font-bold text-gray-900">{cvMatchMode ? 'Top Rekomendasi' : 'Lowongan Dipromosikan'}</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {promotedJobs.map((job, idx) => (
-              <JobCard key={job.id || idx} job={job} matchScore={cvMatchMode ? 90 + idx : null} />
-            ))}
-            {promotedJobs.length === 0 && <div className="col-span-full p-8 text-center text-gray-500 bg-white rounded-xl border border-dashed">Belum ada lowongan yang sesuai.</div>}
-          </div>
-        </div>
-
-        {/* Banner CTA or Broadcast */}
-        {!cvMatchMode && (
-          isProfileComplete ? (
-            <div className="mb-10 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white flex items-center justify-between shadow-lg shadow-indigo-200">
-              <div>
-                <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold tracking-wider mb-3 inline-block">BERITA TERBARU</span>
-                <h3 className="font-bold text-xl mb-1">Tips Wawancara Kerja 2026</h3>
-                <p className="text-sm text-indigo-100 mb-4 max-w-lg opacity-90">Pelajari tren rekrutmen terbaru dan bagaimana cara menjawab pertanyaan wawancara dengan metode STAR agar rekruter terkesan.</p>
-                <button className="bg-white text-indigo-600 text-sm font-bold px-5 py-2.5 rounded-full hover:bg-indigo-50 transition-colors shadow-sm">
-                  Baca Selengkapnya
-                </button>
-              </div>
-              <div className="hidden sm:flex text-6xl opacity-90">🚀</div>
+        {isAnyFilterActive ? (
+          <div className="mb-10 animate-in fade-in duration-300">
+            <div className="flex justify-between items-end mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                {cvMatchMode ? 'Rekomendasi Lowongan Sesuai CV Anda' : 'Hasil Pencarian & Filter'}
+                <span className="text-sm font-normal text-gray-500 ml-2">({filteredJobsList.length} lowongan ditemukan)</span>
+              </h2>
             </div>
-          ) : (
-            <div className="grid md:grid-cols-2 gap-4 mb-10">
-              <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-2xl p-6 text-white flex items-center justify-between shadow-lg shadow-blue-200">
-                <div>
-                  <h3 className="font-bold text-xl mb-1">Cari kerja pakai CV?</h3>
-                  <p className="text-sm text-blue-100 mb-4 opacity-90">Sistem otomatis cari loker yang cocok buatmu.</p>
-                  <button onClick={() => navigate('/pelamar/profile')} className="bg-white text-blue-600 text-sm font-bold px-5 py-2.5 rounded-full hover:bg-blue-50 transition-colors shadow-sm">
-                    Upload CV Sekarang
-                  </button>
-                </div>
-                <div className="hidden sm:block text-5xl opacity-80">📄</div>
-              </div>
-              <div className="bg-gradient-to-br from-orange-500 to-amber-400 rounded-2xl p-6 text-white flex items-center justify-between shadow-lg shadow-orange-200">
-                <div>
-                  <h3 className="font-bold text-xl mb-1">Lengkapi Profilmu!</h3>
-                  <p className="text-sm text-orange-50 mb-4 opacity-90">Profil lengkap meningkatkan peluang direkrut.</p>
-                  <button onClick={() => navigate('/pelamar/profile')} className="bg-white text-orange-600 text-sm font-bold px-5 py-2.5 rounded-full hover:bg-orange-50 transition-colors shadow-sm">
-                    Lengkapi Sekarang
-                  </button>
-                </div>
-                <div className="hidden sm:block text-5xl opacity-80">👤</div>
-              </div>
-            </div>
-          )
-        )}
-
-        {/* Section 2 */}
-        {!cvMatchMode && s1Jobs.length > 0 && (
-          <div className="mb-10">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">Lowongan Pilihan S1 / Manajerial</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {s1Jobs.map((job, idx) => (
-                <JobCard key={job.id || idx} job={job} />
+              {filteredJobsList.map((job, idx) => (
+                <JobCard key={job.id || idx} job={job} matchScore={cvMatchMode ? job.tempScore : null} />
               ))}
+              {filteredJobsList.length === 0 && (
+                <div className="col-span-full p-12 text-center bg-white rounded-2xl border border-gray-100 shadow-sm">
+                  <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3 text-gray-400">
+                    <SlidersHorizontal size={28} />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-1">Tidak ada lowongan yang cocok</h3>
+                  <p className="text-gray-500 text-sm">Coba sesuaikan kata kunci atau bersihkan filter pencarian Anda.</p>
+                </div>
+              )}
             </div>
           </div>
-        )}
+        ) : (
+          <>
+            {/* Section 1 */}
+            <div className="mb-10">
+              <div className="flex justify-between items-end mb-4">
+                <h2 className="text-xl font-bold text-gray-900">Lowongan Dipromosikan</h2>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {promotedJobs.map((job, idx) => (
+                  <JobCard key={job.id || idx} job={job} />
+                ))}
+                {promotedJobs.length === 0 && <div className="col-span-full p-8 text-center text-gray-500 bg-white rounded-xl border border-dashed">Belum ada lowongan yang sesuai.</div>}
+              </div>
+            </div>
 
-        {/* Section 3 */}
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 mb-4">{cvMatchMode ? 'Rekomendasi Lainnya' : 'Mungkin Kamu Tertarik'}</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {otherJobs.map((job, idx) => (
-              <JobCard key={job.id || idx} job={job} matchScore={cvMatchMode ? 75 + Math.floor(Math.random()*15) : null} />
-            ))}
-            {otherJobs.length === 0 && <div className="col-span-full p-8 text-center text-gray-500 bg-white rounded-xl border border-dashed">Belum ada lowongan.</div>}
-          </div>
-          
-          {otherJobs.length > 0 && (
-            <div className="text-center mt-10 mb-6">
-              <button className="bg-blue-50 text-blue-600 font-bold px-8 py-3 rounded-full hover:bg-blue-100 hover:shadow-sm transition-all">
-                Tampilkan Lebih Banyak Lowongan
-              </button>
+            {/* Banner CTA or Broadcast */}
+            {!cvMatchMode && (
+              isProfileComplete ? (
+                <div className="mb-10 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white flex items-center justify-between shadow-lg shadow-indigo-200">
+                  <div>
+                    <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold tracking-wider mb-3 inline-block">BERITA TERBARU</span>
+                    <h3 className="font-bold text-xl mb-1">Tips Wawancara Kerja 2026</h3>
+                    <p className="text-sm text-indigo-100 mb-4 max-w-lg opacity-90">Pelajari tren rekrutmen terbaru dan bagaimana cara menjawab pertanyaan wawancara dengan metode STAR agar rekruter terkesan.</p>
+                    <button className="bg-white text-indigo-600 text-sm font-bold px-5 py-2.5 rounded-full hover:bg-indigo-50 transition-colors shadow-sm">
+                      Baca Selengkapnya
+                    </button>
+                  </div>
+                  <div className="hidden sm:flex text-6xl opacity-90">🚀</div>
+                </div>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-4 mb-10">
+                  <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-2xl p-6 text-white flex items-center justify-between shadow-lg shadow-blue-200">
+                    <div>
+                      <h3 className="font-bold text-xl mb-1">Cari kerja pakai CV?</h3>
+                      <p className="text-sm text-blue-100 mb-4 opacity-90">Sistem otomatis cari loker yang cocok buatmu.</p>
+                      <button onClick={() => navigate('/pelamar/profile')} className="bg-white text-blue-600 text-sm font-bold px-5 py-2.5 rounded-full hover:bg-blue-50 transition-colors shadow-sm">
+                        Upload CV Sekarang
+                      </button>
+                    </div>
+                    <div className="hidden sm:block text-5xl opacity-80">📄</div>
+                  </div>
+                  <div className="bg-gradient-to-br from-orange-500 to-amber-400 rounded-2xl p-6 text-white flex items-center justify-between shadow-lg shadow-orange-200">
+                    <div>
+                      <h3 className="font-bold text-xl mb-1">Lengkapi Profilmu!</h3>
+                      <p className="text-sm text-orange-50 mb-4 opacity-90">Profil lengkap meningkatkan peluang direkrut.</p>
+                      <button onClick={() => navigate('/pelamar/profile')} className="bg-white text-orange-600 text-sm font-bold px-5 py-2.5 rounded-full hover:bg-orange-50 transition-colors shadow-sm">
+                        Lengkapi Sekarang
+                      </button>
+                    </div>
+                    <div className="hidden sm:block text-5xl opacity-80">👤</div>
+                  </div>
+                </div>
+              )
+            )}
+
+            {/* Section 2 */}
+            {!cvMatchMode && s1Jobs.length > 0 && (
+              <div className="mb-10">
+                <h2 className="text-xl font-bold text-gray-900 mb-4">Lowongan Pilihan S1 / Manajerial</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {s1Jobs.map((job, idx) => (
+                    <JobCard key={job.id || idx} job={job} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Section 3 */}
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 font-sans">Mungkin Kamu Tertarik</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {otherJobs.map((job, idx) => (
+                  <JobCard key={job.id || idx} job={job} />
+                ))}
+                {otherJobs.length === 0 && <div className="col-span-full p-8 text-center text-gray-500 bg-white rounded-xl border border-dashed">Belum ada lowongan.</div>}
+              </div>
+              
+              {activeJobs.length > visibleJobsCount && (
+                <div className="text-center mt-10 mb-6">
+                  <button 
+                    onClick={() => setVisibleJobsCount(prev => prev + 6)}
+                    className="bg-blue-50 text-blue-600 font-bold px-8 py-3 rounded-full hover:bg-blue-100 hover:shadow-sm transition-all"
+                  >
+                    Tampilkan Lebih Banyak Lowongan
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
 
       </div>
       

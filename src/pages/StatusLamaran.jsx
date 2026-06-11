@@ -1,7 +1,115 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { CheckCircle2, Clock, MapPin, XCircle, BrainCircuit, CalendarClock, ExternalLink, FileText, Search, Building2 } from 'lucide-react';
+import { CheckCircle2, Clock, MapPin, XCircle, BrainCircuit, CalendarClock, ExternalLink, FileText, Search, Building2, Video } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+// Sub-component: Interview Room Status for each application
+function InterviewRoomStatus({ app }) {
+  const navigate = useNavigate();
+  const [room, setRoom] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let interval;
+    const fetchRoom = async () => {
+      try {
+        const res = await fetch(`${API_URL}/interview-rooms/applicant/${app.id}`);
+        const data = await res.json();
+        setRoom(data);
+      } catch (err) {
+        console.error('Failed to fetch room:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRoom();
+    // Poll every 5 seconds to check if HRD created a room
+    interval = setInterval(fetchRoom, 5000);
+    return () => clearInterval(interval);
+  }, [app.id]);
+
+  if (loading) {
+    return (
+      <div className="mt-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-inner">
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm text-blue-700 font-medium">Memeriksa status room interview...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // No room created yet
+  if (!room) {
+    return (
+      <div className="mt-8 p-5 bg-gradient-to-r from-gray-50 to-slate-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-inner">
+        <div>
+          <h4 className="font-bold text-gray-700 flex items-center gap-2 mb-1">
+            <Clock size={20} className="text-gray-500"/> Menunggu Room Interview
+          </h4>
+          <p className="text-sm text-gray-600">HRD belum membuat room interview untuk Anda. Silakan tunggu, halaman ini akan otomatis ter-update.</p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-gray-400">
+          <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+          Menunggu...
+        </div>
+      </div>
+    );
+  }
+
+  // Room is scheduled for the future
+  if (room.status === 'scheduled' && room.scheduled_at) {
+    const scheduledDate = new Date(room.scheduled_at);
+    const now = new Date();
+    const isReady = scheduledDate <= now;
+
+    if (!isReady) {
+      return (
+        <div className="mt-8 p-5 bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-inner">
+          <div>
+            <h4 className="font-bold text-amber-900 flex items-center gap-2 mb-1">
+              <CalendarClock size={20} className="text-amber-600"/> Interview Terjadwal
+            </h4>
+            <p className="text-sm text-amber-700">
+              Room <span className="font-bold">"{room.room_name}"</span> dijadwalkan pada:
+            </p>
+            <p className="text-lg font-bold text-amber-900 mt-1">
+              {scheduledDate.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} — {scheduledDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-1 text-xs text-amber-600 font-medium bg-amber-100 px-4 py-3 rounded-xl border border-amber-200">
+            <CalendarClock size={24} className="text-amber-500" />
+            Belum Waktunya
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // Room is ready (waiting/active/scheduled but time has passed)
+  return (
+    <div className="mt-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-inner">
+      <div>
+        <h4 className="font-bold text-blue-900 flex items-center gap-2 mb-1">
+          <Video size={20} className="text-blue-600"/> Room Interview Siap!
+        </h4>
+        <p className="text-sm text-blue-700">
+          Room <span className="font-bold">"{room.room_name}"</span> sudah dibuat oleh HRD. Klik tombol di bawah untuk bergabung.
+        </p>
+        <p className="text-xs text-blue-500 mt-1">Kode Room: {room.room_code}</p>
+      </div>
+      <button 
+        onClick={() => navigate(`/interview-room/${room.id}`)} 
+        className="w-full sm:w-auto flex justify-center items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 hover:shadow-lg transition-all whitespace-nowrap"
+      >
+        <ExternalLink size={18} /> Gabung Meeting
+      </button>
+    </div>
+  );
+}
 
 export default function StatusLamaran() {
   const { user } = useAuth();
@@ -264,18 +372,7 @@ export default function StatusLamaran() {
                   )}
 
                   {app.status === 'Interview' && (
-                    <div className="mt-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-inner">
-                      <div>
-                        <h4 className="font-bold text-blue-900 flex items-center gap-2 mb-1"><CalendarClock size={20} className="text-blue-600"/> Undangan Interview</h4>
-                        <p className="text-sm text-blue-700">Selamat! Anda dijadwalkan untuk wawancara online dengan HRD.</p>
-                      </div>
-                      <button 
-                        onClick={() => navigate(`/interview-room/${app.user_id}?roomName=Interview+${encodeURIComponent(app.job_title)}`)} 
-                        className="w-full sm:w-auto flex justify-center items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 hover:shadow-lg transition-all whitespace-nowrap"
-                      >
-                        <ExternalLink size={18} /> Gabung Meeting
-                      </button>
-                    </div>
+                    <InterviewRoomStatus app={app} />
                   )}
 
                   {app.status === 'Menunggu Hasil' && (

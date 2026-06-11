@@ -76,6 +76,122 @@ const upload = multer({ storage });
   } catch (e) {
     console.error('Error creating support_messages:', e.message);
   }
+
+  // Interview Rooms table
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS interview_rooms (
+        id SERIAL PRIMARY KEY,
+        applicant_id INTEGER NOT NULL,
+        room_name VARCHAR(255) NOT NULL,
+        room_code VARCHAR(100) NOT NULL UNIQUE,
+        status VARCHAR(50) DEFAULT 'waiting',
+        created_by INTEGER NOT NULL,
+        scheduled_at TIMESTAMP DEFAULT NULL,
+        hrd_last_seen TIMESTAMP DEFAULT NULL,
+        pelamar_last_seen TIMESTAMP DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (applicant_id) REFERENCES applicants(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('Ensured interview_rooms table exists');
+  } catch (e) {
+    console.error('Error creating interview_rooms:', e.message);
+  }
+
+  // Interview Chats table
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS interview_chats (
+        id SERIAL PRIMARY KEY,
+        room_id INTEGER NOT NULL,
+        sender_id INTEGER NOT NULL,
+        sender_name VARCHAR(255) NOT NULL,
+        sender_role VARCHAR(50) NOT NULL,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (room_id) REFERENCES interview_rooms(id) ON DELETE CASCADE
+      )
+    `);
+    console.log('Ensured interview_chats table exists');
+  } catch (e) {
+    console.error('Error creating interview_chats:', e.message);
+  }
+
+  // Table for Psychotest Packages
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS psychotest_packages (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL UNIQUE
+      )
+    `);
+    console.log('Ensured psychotest_packages table exists');
+  } catch (e) {
+    console.error('Error creating psychotest_packages:', e.message);
+  }
+
+  // Table for Psychotest Questions
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS psychotest_questions (
+        id SERIAL PRIMARY KEY,
+        package_id INTEGER NOT NULL REFERENCES psychotest_packages(id) ON DELETE CASCADE,
+        question_text TEXT NOT NULL,
+        correct_answer VARCHAR(255) DEFAULT ''
+      )
+    `);
+    console.log('Ensured psychotest_questions table exists');
+  } catch (e) {
+    console.error('Error creating psychotest_questions:', e.message);
+  }
+
+  // Table for Psychotest Answers
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS psychotest_answers (
+        id SERIAL PRIMARY KEY,
+        applicant_id INTEGER NOT NULL UNIQUE REFERENCES applicants(id) ON DELETE CASCADE,
+        answers_json TEXT NOT NULL,
+        submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('Ensured psychotest_answers table exists');
+  } catch (e) {
+    console.error('Error creating psychotest_answers:', e.message);
+  }
+
+  // Seed default packages and questions if empty
+  try {
+    const [pkgCheck] = await db.query('SELECT COUNT(*) as count FROM psychotest_packages');
+    if (parseInt(pkgCheck[0].count) === 0) {
+      console.log('Seeding default psychotest packages & questions...');
+      const [resA] = await db.query("INSERT INTO psychotest_packages (name) VALUES ('Paket A (General Intelligence & Logic)')");
+      const [resB] = await db.query("INSERT INTO psychotest_packages (name) VALUES ('Paket B (Numerical & Analytical)')");
+      const [resC] = await db.query("INSERT INTO psychotest_packages (name) VALUES ('Paket C (Komprehensif)')");
+
+      const idA = resA.insertId;
+      const idB = resB.insertId;
+      const idC = resC.insertId;
+
+      // Insert Questions for A
+      await db.query("INSERT INTO psychotest_questions (package_id, question_text, correct_answer) VALUES (?, ?, ?)", [idA, "Jika semua burung bisa terbang, dan Penguin adalah burung, apakah Penguin bisa terbang?", "Tergantung konteks definisi terbang (Pengecualian)"]);
+      await db.query("INSERT INTO psychotest_questions (package_id, question_text, correct_answer) VALUES (?, ?, ?)", [idA, "Lanjutkan deret angka ini: 2, 4, 8, 16, ...", "32"]);
+      await db.query("INSERT INTO psychotest_questions (package_id, question_text, correct_answer) VALUES (?, ?, ?)", [idA, "Bagaimana Anda menangani konflik dengan rekan kerja?", "Mendengarkan secara objektif dan mencari jalan tengah"]);
+
+      // Insert Questions for B
+      await db.query("INSERT INTO psychotest_questions (package_id, question_text, correct_answer) VALUES (?, ?, ?)", [idB, "Sebuah kereta melaju dengan kecepatan 80km/jam. Jarak tempuh 200km. Berapa jam waktu yang dibutuhkan?", "2.5 Jam"]);
+      await db.query("INSERT INTO psychotest_questions (package_id, question_text, correct_answer) VALUES (?, ?, ?)", [idB, "Jika 5 pekerja bisa menyelesaikan proyek dalam 10 hari, berapa lama jika hanya ada 2 pekerja?", "25 Hari"]);
+      await db.query("INSERT INTO psychotest_questions (package_id, question_text, correct_answer) VALUES (?, ?, ?)", [idB, "Berapa 15% dari 200?", "30"]);
+
+      // Insert Questions for C
+      await db.query("INSERT INTO psychotest_questions (package_id, question_text, correct_answer) VALUES (?, ?, ?)", [idC, "Sebutkan kelebihan terbesar diri Anda dan kontribusi apa yang bisa Anda berikan.", "Fokus kerja keras, komunikasi, dan kejujuran"]);
+      console.log('Psychotest packages & questions seeded successfully.');
+    }
+  } catch (err) {
+    console.error('Failed to seed default psychotest data:', err.message);
+  }
 })();
 
 // --- AUTH ENDPOINTS ---
@@ -276,20 +392,32 @@ app.put('/api/jobs/:id', async (req, res) => {
   }
 });
 
+// Delete a job vacancy (cascading deletes related applicants)
+app.delete('/api/jobs/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('DELETE FROM jobs WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Lowongan pekerjaan berhasil dihapus.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- APPLICANTS ENDPOINTS ---
 app.get('/api/applicants', async (req, res) => {
   const hrId = req.query.hr_id;
   try {
-    let query = 'SELECT a.* FROM applicants a ORDER BY a.id DESC';
+    let query = 'SELECT a.*, EXISTS(SELECT 1 FROM psychotest_answers WHERE applicant_id = a.id) AS has_answers FROM applicants a ORDER BY a.id DESC';
     const params = [];
     if (hrId) {
-      query = 'SELECT a.* FROM applicants a JOIN jobs j ON a.job_id = j.id WHERE j.hr_id = ? ORDER BY a.id DESC';
+      query = 'SELECT a.*, EXISTS(SELECT 1 FROM psychotest_answers WHERE applicant_id = a.id) AS has_answers FROM applicants a JOIN jobs j ON a.job_id = j.id WHERE j.hr_id = ? ORDER BY a.id DESC';
       params.push(hrId);
     }
     const [rows] = await db.query(query, params);
     // Parse JSON strings back to arrays/objects
     const parsedRows = rows.map(r => ({
       ...r,
+      hasAnswers: r.has_answers === true || r.has_answers === 1 || r.has_answers === 'true',
       jobId: r.job_id,
       matchScore: r.match_score,
       aiMatchDetails: {
@@ -674,6 +802,172 @@ app.post('/api/applications', async (req, res) => {
   }
 });
 
+// --- INTERVIEW ROOMS ENDPOINTS ---
+
+// Create a new interview room (HRD creates)
+app.post('/api/interview-rooms', async (req, res) => {
+  const { applicantId, roomName, createdBy, scheduledAt } = req.body;
+  try {
+    // Generate unique room code
+    const roomCode = 'INT-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    // Close any existing active rooms for this applicant
+    await db.query(
+      "UPDATE interview_rooms SET status = 'ended' WHERE applicant_id = ? AND status != 'ended'",
+      [applicantId]
+    );
+    
+    const [result] = await db.query(
+      'INSERT INTO interview_rooms (applicant_id, room_name, room_code, status, created_by, scheduled_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [applicantId, roomName, roomCode, scheduledAt ? 'scheduled' : 'waiting', createdBy, scheduledAt || null]
+    );
+    
+    res.status(201).json({ 
+      success: true, 
+      id: result.insertId, 
+      roomCode,
+      roomName,
+      status: scheduledAt ? 'scheduled' : 'waiting',
+      scheduledAt: scheduledAt || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get active room for an applicant
+app.get('/api/interview-rooms/applicant/:applicantId', async (req, res) => {
+  const { applicantId } = req.params;
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM interview_rooms WHERE applicant_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+      [applicantId]
+    );
+    if (rows.length > 0) {
+      res.json(rows[0]);
+    } else {
+      res.json(null);
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get room by room ID
+app.get('/api/interview-rooms/:roomId', async (req, res) => {
+  const { roomId } = req.params;
+  try {
+    const [rows] = await db.query(
+      `SELECT ir.*, a.name as applicant_name, a.user_id as applicant_user_id, a.job_id,
+              j.title as job_title, u.name as hrd_name
+       FROM interview_rooms ir
+       JOIN applicants a ON ir.applicant_id = a.id
+       JOIN jobs j ON a.job_id = j.id
+       JOIN users u ON ir.created_by = u.id
+       WHERE ir.id = ?`,
+      [roomId]
+    );
+    if (rows.length > 0) {
+      res.json(rows[0]);
+    } else {
+      res.status(404).json({ error: 'Room not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update room status
+app.put('/api/interview-rooms/:roomId/status', async (req, res) => {
+  const { roomId } = req.params;
+  const { status } = req.body;
+  try {
+    await db.query('UPDATE interview_rooms SET status = ? WHERE id = ?', [status, roomId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Heartbeat - update user presence in room
+app.put('/api/interview-rooms/:roomId/heartbeat', async (req, res) => {
+  const { roomId } = req.params;
+  const { role } = req.body;
+  try {
+    const col = role === 'HRD' ? 'hrd_last_seen' : 'pelamar_last_seen';
+    await db.query(`UPDATE interview_rooms SET ${col} = NOW() WHERE id = ?`, [roomId]);
+    
+    // Also set room to active if it's still waiting
+    await db.query("UPDATE interview_rooms SET status = 'active' WHERE id = ? AND status = 'waiting'", [roomId]);
+    
+    // Get updated room data to check both presence
+    const [rows] = await db.query('SELECT hrd_last_seen, pelamar_last_seen FROM interview_rooms WHERE id = ?', [roomId]);
+    if (rows.length > 0) {
+      const now = new Date();
+      const hrdOnline = rows[0].hrd_last_seen && (now - new Date(rows[0].hrd_last_seen)) < 15000;
+      const pelamarOnline = rows[0].pelamar_last_seen && (now - new Date(rows[0].pelamar_last_seen)) < 15000;
+      res.json({ success: true, hrdOnline, pelamarOnline });
+    } else {
+      res.json({ success: true, hrdOnline: false, pelamarOnline: false });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get chat messages for a room
+app.get('/api/interview-rooms/:roomId/chats', async (req, res) => {
+  const { roomId } = req.params;
+  const afterId = req.query.after_id || 0;
+  try {
+    const [rows] = await db.query(
+      'SELECT * FROM interview_chats WHERE room_id = ? AND id > ? ORDER BY id ASC',
+      [roomId, afterId]
+    );
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send chat message in room
+app.post('/api/interview-rooms/:roomId/chats', async (req, res) => {
+  const { roomId } = req.params;
+  const { senderId, senderName, senderRole, message } = req.body;
+  try {
+    const [result] = await db.query(
+      'INSERT INTO interview_chats (room_id, sender_id, sender_name, sender_role, message) VALUES (?, ?, ?, ?, ?)',
+      [roomId, senderId, senderName, senderRole, message]
+    );
+    res.status(201).json({ 
+      success: true, 
+      id: result.insertId,
+      room_id: parseInt(roomId),
+      sender_id: senderId,
+      sender_name: senderName,
+      sender_role: senderRole,
+      message,
+      created_at: new Date()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all rooms for an applicant (including scheduled ones)
+app.get('/api/interview-rooms/all/:applicantId', async (req, res) => {
+  const { applicantId } = req.params;
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM interview_rooms WHERE applicant_id = ? ORDER BY created_at DESC",
+      [applicantId]
+    );
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- PSYCHOTEST PACKAGES ENDPOINTS ---
 app.get('/api/packages', async (req, res) => {
   try {
@@ -689,6 +983,169 @@ app.post('/api/packages', async (req, res) => {
   try {
     await db.query('INSERT INTO psychotest_packages (name) VALUES (?)', [name]);
     res.status(201).json({ name });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all packages with questions (for Operator review & management)
+app.get('/api/packages-full', async (req, res) => {
+  try {
+    const [packages] = await db.query('SELECT * FROM psychotest_packages ORDER BY id DESC');
+    const [questions] = await db.query('SELECT * FROM psychotest_questions ORDER BY id ASC');
+    
+    // Group questions by package_id
+    const result = packages.map(pkg => ({
+      id: pkg.id,
+      name: pkg.name,
+      questions: questions
+        .filter(q => q.package_id === pkg.id)
+        .map(q => ({
+          id: q.id,
+          q: q.question_text,
+          a: q.correct_answer,
+          options: q.options_json ? JSON.parse(q.options_json) : []
+        }))
+    }));
+    
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new package (name must be unique)
+app.post('/api/packages-full', async (req, res) => {
+  const { name } = req.body;
+  try {
+    const [result] = await db.query('INSERT INTO psychotest_packages (name) VALUES (?)', [name]);
+    res.status(201).json({ id: result.insertId, name, questions: [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a package
+app.delete('/api/packages-full/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('DELETE FROM psychotest_packages WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add a question to a package
+app.post('/api/packages-full/:id/questions', async (req, res) => {
+  const packageId = req.params.id;
+  const { questionText, correctAnswer, options } = req.body;
+  const optionsJson = JSON.stringify(options || []);
+  try {
+    const [result] = await db.query(
+      'INSERT INTO psychotest_questions (package_id, question_text, correct_answer, options_json) VALUES (?, ?, ?, ?)',
+      [packageId, questionText, correctAnswer || '', optionsJson]
+    );
+    res.status(201).json({
+      id: result.insertId,
+      q: questionText,
+      a: correctAnswer || '',
+      options: options || []
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete a question
+app.delete('/api/questions-full/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('DELETE FROM psychotest_questions WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get questions by package name (for Pelamar taking the test)
+app.get('/api/packages/questions', async (req, res) => {
+  const { packageName } = req.query;
+  try {
+    const [packages] = await db.query('SELECT id FROM psychotest_packages WHERE name = ?', [packageName]);
+    if (packages.length === 0) {
+      return res.json([]);
+    }
+    const [questions] = await db.query(
+      'SELECT id, question_text, options_json FROM psychotest_questions WHERE package_id = ? ORDER BY id ASC',
+      [packages[0].id]
+    );
+    res.json(questions.map(q => ({
+      id: q.id,
+      q: q.question_text,
+      options: q.options_json ? JSON.parse(q.options_json) : []
+    })));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get answers for a specific applicant (enriched with correct keys for scoring)
+app.get('/api/applicants/:applicantId/answers', async (req, res) => {
+  const { applicantId } = req.params;
+  try {
+    const [rows] = await db.query('SELECT * FROM psychotest_answers WHERE applicant_id = ?', [applicantId]);
+    if (rows.length === 0) {
+      return res.json(null);
+    }
+    
+    const answerRow = rows[0];
+    const answers = JSON.parse(answerRow.answers_json);
+    
+    if (answers && answers.length > 0) {
+      const questionIds = answers.map(a => a.questionId).filter(id => id);
+      if (questionIds.length > 0) {
+        // Query correct keys and options from DB
+        const [questions] = await db.query(
+          `SELECT id, correct_answer, options_json FROM psychotest_questions WHERE id IN (${questionIds.map(() => '?').join(',')})`,
+          questionIds
+        );
+        
+        answers.forEach(ans => {
+          const q = questions.find(item => item.id === ans.questionId);
+          if (q) {
+            ans.correctAnswer = q.correct_answer;
+            ans.options = q.options_json ? JSON.parse(q.options_json) : [];
+          }
+        });
+      }
+    }
+    
+    res.json({
+      id: answerRow.id,
+      applicant_id: answerRow.applicant_id,
+      submitted_at: answerRow.submitted_at,
+      answers: answers
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Submit answers for an applicant (keeps applicant status in 'Psikotes')
+app.post('/api/applicants/:applicantId/answers', async (req, res) => {
+  const { applicantId } = req.params;
+  const { answers } = req.body; // array of { questionId, questionText, answerText }
+  try {
+    const answersJson = JSON.stringify(answers);
+    
+    // Save to psychotest_answers table
+    await db.query(
+      'INSERT INTO psychotest_answers (applicant_id, answers_json) VALUES (?, ?) ON CONFLICT (applicant_id) DO UPDATE SET answers_json = EXCLUDED.answers_json',
+      [applicantId, answersJson]
+    );
+    
+    res.status(201).json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
