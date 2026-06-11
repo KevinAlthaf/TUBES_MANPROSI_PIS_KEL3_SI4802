@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Users, Filter, CheckCircle, XCircle, CalendarClock, BrainCircuit, FileText, ChevronRight, X, ThumbsUp, ThumbsDown, Video, Calendar } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../context/DataContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function Pelamar() {
   const { applicants, jobs, updateApplicantStatus } = useData();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -19,7 +21,29 @@ export default function Pelamar() {
   // Modals State
   const [confirmStatusModal, setConfirmStatusModal] = useState({ isOpen: false, applicantId: null, targetStatus: null, title: '', message: '' });
   const [showPsikotesResult, setShowPsikotesResult] = useState(null);
+  const [psychotestAnswers, setPsychotestAnswers] = useState(null);
+  const [loadingAnswers, setLoadingAnswers] = useState(false);
   const [hasilWawancaraModal, setHasilWawancaraModal] = useState(null);
+
+  const handleViewPsikotes = async (applicant) => {
+    setShowPsikotesResult(applicant);
+    setPsychotestAnswers(null);
+    setLoadingAnswers(true);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      const res = await fetch(`${API_URL}/applicants/${applicant.id}/answers`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.answers) {
+          setPsychotestAnswers(data.answers);
+        }
+      }
+    } catch (error) {
+      console.error("Gagal mengambil jawaban psikotes:", error);
+    } finally {
+      setLoadingAnswers(false);
+    }
+  };
 
   // Meeting Modal State
   const [meetingModal, setMeetingModal] = useState({ isOpen: false, applicantId: null, type: null });
@@ -34,14 +58,66 @@ export default function Pelamar() {
     setMeetingTime('');
   };
 
-  const handleCreateMeeting = () => {
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+
+  const handleCreateMeeting = async () => {
     if (meetingModal.type === 'now') {
       if (!roomName) return alert('Nama room harus diisi!');
-      navigate(`/interview-room/${meetingModal.applicantId}?roomName=${encodeURIComponent(roomName)}`);
+      setIsCreatingRoom(true);
+      try {
+        const API_URL = import.meta.env.VITE_API_URL || '/api';
+        const res = await fetch(`${API_URL}/interview-rooms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicantId: meetingModal.applicantId,
+            roomName: roomName,
+            createdBy: user.id,
+            scheduledAt: null
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          navigate(`/interview-room/${data.id}`);
+        } else {
+          alert('Gagal membuat room: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Gagal terhubung ke server.');
+      } finally {
+        setIsCreatingRoom(false);
+      }
     } else if (meetingModal.type === 'scheduled') {
       if (!meetingDate || !meetingTime) return alert('Tanggal dan Jam harus diisi!');
-      alert(`Jadwal meeting berhasil disimpan untuk tanggal ${meetingDate} jam ${meetingTime}`);
-      setMeetingModal({ isOpen: false, applicantId: null, type: null });
+      if (!roomName) return alert('Nama room harus diisi!');
+      setIsCreatingRoom(true);
+      try {
+        const scheduledAt = new Date(`${meetingDate}T${meetingTime}:00`).toISOString();
+        const API_URL = import.meta.env.VITE_API_URL || '/api';
+        const res = await fetch(`${API_URL}/interview-rooms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            applicantId: meetingModal.applicantId,
+            roomName: roomName || `Interview ${meetingDate}`,
+            createdBy: user.id,
+            scheduledAt
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(`✅ Jadwal meeting berhasil disimpan!\nTanggal: ${meetingDate}\nJam: ${meetingTime}\nKode Room: ${data.roomCode}\n\nPelamar akan melihat jadwal ini di halaman Status Lamaran mereka.`);
+          setMeetingModal({ isOpen: false, applicantId: null, type: null });
+        } else {
+          alert('Gagal membuat jadwal: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Gagal terhubung ke server.');
+      } finally {
+        setIsCreatingRoom(false);
+      }
     }
   };
 
@@ -103,10 +179,10 @@ export default function Pelamar() {
             <table className="w-full text-left text-sm text-gray-600">
               <thead className="bg-gray-50 text-gray-700 border-b border-gray-100">
                 <tr>
-                <th className="px-6 py-4 font-bold">Pelamar</th>
-                <th className="px-6 py-4 font-bold">Skor AI Match</th>
-                <th className="px-6 py-4 font-bold">Kategori</th>
-                <th className="px-6 py-4 font-bold text-center">Status</th>
+                 <th className="px-6 py-4 font-bold">Pelamar</th>
+                 <th className="px-6 py-4 font-bold">Lowongan</th>
+                 <th className="px-6 py-4 font-bold">Skor AI Match</th>
+                 <th className="px-6 py-4 font-bold text-center">Status</th>
                 <th className="px-6 py-4 font-bold text-center">Riwayat Psikotes</th>
                 <th className="px-6 py-4 font-bold text-right">Aksi</th>
               </tr>
@@ -160,13 +236,15 @@ export default function Pelamar() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
-                        {app.status === 'Psikotes' ? (
+                        {app.hasAnswers ? (
                           <button 
-                            onClick={() => setShowPsikotesResult(app)}
+                            onClick={() => handleViewPsikotes(app)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors text-xs font-semibold"
                           >
                             <FileText size={14} /> Lihat
                           </button>
+                        ) : app.status === 'Psikotes' ? (
+                          <span className="text-xs text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full font-medium">Sedang Ujian</span>
                         ) : (
                           <span className="text-gray-300">-</span>
                         )}
@@ -208,9 +286,17 @@ export default function Pelamar() {
                               <FileText size={15} />
                               Hasil Wawancara
                             </button>
-                          )}
-                          {(app.status === 'Interview' || app.status === 'Psikotes') && (
+                          )}                           {(app.status === 'Interview' || app.status === 'Psikotes') && (
                             <>
+                              {app.status === 'Psikotes' && app.hasAnswers && (
+                                <button 
+                                  onClick={() => setConfirmStatusModal({ isOpen: true, applicantId: app.id, targetStatus: 'Interview', title: 'Lanjut Wawancara?', message: `Apakah Anda yakin ingin memanggil ${app.name} untuk tahap Wawancara?` })}
+                                  className="bg-blue-600 text-white hover:bg-blue-700 px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-semibold transition-colors shadow-sm"
+                                >
+                                  <CalendarClock size={15} />
+                                  Wawancara
+                                </button>
+                              )}
                               <button 
                                 onClick={() => setConfirmStatusModal({ isOpen: true, applicantId: app.id, targetStatus: 'Menunggu', title: 'Batalkan Tahap?', message: `Anda yakin ingin membatalkan tahap ini dan mengembalikan ${app.name} ke status Menunggu?` })}
                                 className="bg-red-50 text-red-700 hover:bg-red-100 border border-red-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-semibold transition-colors shadow-sm"
@@ -365,6 +451,17 @@ export default function Pelamar() {
                   {meetingModal.type === 'scheduled' && (
                     <div className="space-y-4">
                       <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Nama Room Meeting</label>
+                        <input 
+                          type="text" 
+                          value={roomName}
+                          onChange={(e) => setRoomName(e.target.value)}
+                          placeholder="Contoh: Interview Frontend Dev"
+                          className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          autoFocus
+                        />
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Tanggal Meeting</label>
                         <input 
                           type="date" 
@@ -387,9 +484,10 @@ export default function Pelamar() {
 
                   <button 
                     onClick={handleCreateMeeting}
-                    className={`w-full py-2.5 rounded-lg text-white font-medium transition-colors ${meetingModal.type === 'now' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
+                    disabled={isCreatingRoom}
+                    className={`w-full py-2.5 rounded-lg text-white font-medium transition-colors disabled:opacity-50 ${meetingModal.type === 'now' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
                   >
-                    {meetingModal.type === 'now' ? 'Masuk ke Room' : 'Simpan Jadwal'}
+                    {isCreatingRoom ? 'Membuat Room...' : (meetingModal.type === 'now' ? 'Masuk ke Room' : 'Simpan Jadwal')}
                   </button>
                 </div>
               )}
@@ -429,7 +527,7 @@ export default function Pelamar() {
       {showPsikotesResult && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 duration-300">
-            <div className="bg-gradient-to-r from-purple-600 to-purple-800 p-6 flex justify-between items-start text-white">
+            <div className="bg-gradient-to-r from-purple-650 from-purple-600 to-purple-800 p-6 flex justify-between items-start text-white">
               <div>
                 <h3 className="text-xl font-bold flex items-center gap-2">
                   <FileText /> Riwayat Psikotes Pelamar
@@ -440,39 +538,157 @@ export default function Pelamar() {
                 <X size={20} />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              
-              {/* Mock Psychotest Data */}
-              <div className="bg-purple-50 rounded-xl p-4 flex gap-4 items-center">
-                <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center border border-purple-100 text-2xl font-bold text-purple-600">
-                  85
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50/50">
+              {loadingAnswers ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <div className="w-10 h-10 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                  <p className="text-gray-500 text-xs font-semibold">Memuat jawaban psikotes...</p>
                 </div>
-                <div>
-                  <h4 className="font-bold text-gray-900">Skor Akhir Psikotes</h4>
-                  <p className="text-sm text-gray-600">Pelamar ini menunjukkan logika dan penalaran numerik yang sangat baik di atas rata-rata.</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {[
-                  { q: "Jika semua burung bisa terbang, dan Penguin adalah burung, apakah Penguin bisa terbang?", a: "Tergantung konteks definisi terbang (Pelamar menjawab: Tidak, ini pengecualian).", isCorrect: true },
-                  { q: "Lanjutkan deret angka ini: 2, 4, 8, 16, ...", a: "32", isCorrect: true },
-                  { q: "Pilih gambar yang polanya berbeda dari 4 gambar lainnya.", a: "Opsi C (Gambar Segitiga Terbalik)", isCorrect: false },
-                  { q: "Bagaimana Anda menangani konflik dengan rekan kerja?", a: "Saya akan mendengarkan sudut pandangnya terlebih dahulu lalu mencari jalan tengah yang objektif tanpa emosi.", isCorrect: true },
-                  { q: "Sebuah kereta melaju dengan kecepatan 80km/jam. Jarak tempuh 200km. Berapa jam waktu yang dibutuhkan?", a: "2.5 Jam", isCorrect: true },
-                ].map((item, idx) => (
-                  <div key={idx} className="border border-gray-100 rounded-xl p-4 bg-white">
-                    <p className="font-medium text-gray-800 mb-2">Soal {idx+1}: {item.q}</p>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-sm text-gray-600 flex items-start gap-2">
-                        <span className="font-bold text-gray-700">Jawaban:</span> 
-                        <span className={item.isCorrect ? 'text-green-700' : 'text-red-600'}>{item.a}</span>
-                        {item.isCorrect ? <CheckCircle size={16} className="text-green-500 mt-0.5" /> : <XCircle size={16} className="text-red-500 mt-0.5" />}
-                      </p>
-                    </div>
+              ) : !psychotestAnswers || psychotestAnswers.length === 0 ? (
+                <div className="text-center py-16 text-gray-500">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
+                    <XCircle size={32} />
                   </div>
-                ))}
-              </div>
+                  <p className="font-bold text-gray-700">Belum Ada Jawaban</p>
+                  <p className="text-xs text-gray-400 mt-1">Pelamar ini belum menyelesaikan lembar jawaban psikotes.</p>
+                </div>
+              ) : (() => {
+                // Calculate correct/incorrect counts dynamically
+                let totalQuestions = psychotestAnswers.length;
+                let correctAnswersCount = 0;
+                let incorrectAnswersCount = 0;
+                
+                psychotestAnswers.forEach(item => {
+                  const isMultipleChoice = item.options && item.options.length > 0;
+                  if (isMultipleChoice && item.correctAnswer) {
+                    const letterPrefix = item.correctAnswer + '.';
+                    const isCorrect = item.answerText.trim().startsWith(letterPrefix);
+                    if (isCorrect) {
+                      correctAnswersCount++;
+                    } else {
+                      incorrectAnswersCount++;
+                    }
+                  } else if (item.correctAnswer) {
+                    const isCorrect = item.answerText.trim().toLowerCase() === item.correctAnswer.trim().toLowerCase();
+                    if (isCorrect) {
+                      correctAnswersCount++;
+                    } else {
+                      incorrectAnswersCount++;
+                    }
+                  }
+                });
+                
+                const scorePercent = Math.round((correctAnswersCount / totalQuestions) * 100);
+
+                return (
+                  <div className="space-y-4">
+                    {/* Score summary panel */}
+                    <div className="grid grid-cols-3 gap-4 bg-purple-50/60 border border-purple-100 rounded-xl p-4 text-center">
+                      <div>
+                        <span className="text-gray-550 text-xs font-semibold block mb-1">Total Soal</span>
+                        <span className="font-bold text-gray-800 text-lg">{totalQuestions}</span>
+                      </div>
+                      <div>
+                        <span className="text-green-600 text-xs font-semibold block mb-1">Jawaban Benar</span>
+                        <span className="font-bold text-green-700 text-lg">{correctAnswersCount}</span>
+                      </div>
+                      <div>
+                        <span className="text-red-500 text-xs font-semibold block mb-1">Jawaban Salah</span>
+                        <span className="font-bold text-red-655 text-lg">{incorrectAnswersCount}</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-purple-50 border border-purple-100 rounded-xl p-4 flex gap-4 items-center">
+                      <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center border border-purple-200 text-2xl font-bold text-purple-700 shadow-sm shrink-0">
+                        {scorePercent}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-900 text-sm">Skor Akhir Psikotes</h4>
+                        <p className="text-xs text-gray-650 mt-0.5 leading-relaxed">
+                          {scorePercent >= 80 
+                            ? "Hasil sangat baik. Pelamar menunjukkan logika dan kompetensi pemecahan masalah yang tinggi." 
+                            : scorePercent >= 60 
+                              ? "Hasil cukup baik. Pelamar memiliki potensi pemecahan masalah standar."
+                              : "Hasil kurang memuaskan. Nilai berada di bawah rata-rata kelulusan."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Questions loop */}
+                    {psychotestAnswers.map((item, idx) => {
+                      const isMultipleChoice = item.options && item.options.length > 0;
+                      const letterPrefix = item.correctAnswer + '.';
+                      const isCorrect = isMultipleChoice 
+                        ? item.answerText.trim().startsWith(letterPrefix) 
+                        : (item.correctAnswer && item.answerText.trim().toLowerCase() === item.correctAnswer.trim().toLowerCase());
+
+                      return (
+                        <div key={idx} className="border border-gray-150 rounded-xl p-5 bg-white shadow-sm hover:shadow-md transition-shadow">
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="font-bold text-purple-600 text-xs">PERTANYAAN #{idx + 1}</span>
+                            {item.correctAnswer ? (
+                              isCorrect ? (
+                                <span className="text-xs text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-md flex items-center gap-1 border border-green-100">
+                                  <CheckCircle size={12} className="text-green-500" /> Benar
+                                </span>
+                              ) : (
+                                <span className="text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded-md flex items-center gap-1 border border-red-100">
+                                  <XCircle size={12} className="text-red-500" /> Salah
+                                </span>
+                              )
+                            ) : (
+                              <span className="text-xs text-gray-500 font-medium bg-gray-50 px-2 py-0.5 rounded-md">Esai</span>
+                            )}
+                          </div>
+
+                          <p className="font-semibold text-gray-800 mb-3 text-sm leading-relaxed whitespace-pre-wrap">{item.questionText || item.q}</p>
+                          
+                          {isMultipleChoice && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 bg-gray-55/50 p-3 rounded-lg border border-gray-100">
+                              {item.options.map((opt, i) => {
+                                const letter = String.fromCharCode(65 + i);
+                                const isThisCorrect = item.correctAnswer === letter;
+                                const isThisChosen = item.answerText.trim().startsWith(letter + '.');
+                                return (
+                                  <div 
+                                    key={i} 
+                                    className={`text-xs p-2 rounded-md font-medium border ${
+                                      isThisCorrect 
+                                        ? 'bg-green-50 border-green-200 text-green-800 font-semibold' 
+                                        : isThisChosen 
+                                          ? 'bg-red-50 border-red-200 text-red-800' 
+                                          : 'bg-white border-gray-150 text-gray-700'
+                                    }`}
+                                  >
+                                    <span className="font-bold">{letter}.</span> {opt} {isThisCorrect && '✔️'} {isThisChosen && !isThisCorrect && '❌'}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          <div className="bg-purple-50/30 border border-purple-100 rounded-lg p-3.5">
+                            <span className="block text-xs font-bold text-purple-800/60 mb-1.5 uppercase tracking-wider">Jawaban Pelamar:</span>
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed font-semibold">
+                              {item.answerText || '- (Kosong)'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 bg-white flex justify-end">
+              <button 
+                onClick={() => setShowPsikotesResult(null)}
+                className="px-5 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-lg font-bold text-xs transition-colors"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

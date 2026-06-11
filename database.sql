@@ -165,3 +165,51 @@ INSERT INTO pelamar_profiles (user_id, nama_lengkap, no_telepon) VALUES
 (2, 'Siti Aminah', '081234567891');
 
 
+-- Table for Interview Rooms
+CREATE TABLE IF NOT EXISTS interview_rooms (
+  id SERIAL PRIMARY KEY,
+  applicant_id INTEGER NOT NULL,
+  room_name VARCHAR(255) NOT NULL,
+  room_code VARCHAR(100) NOT NULL UNIQUE,
+  status VARCHAR(50) DEFAULT 'waiting',
+  created_by INTEGER NOT NULL,
+  scheduled_at TIMESTAMP DEFAULT NULL,
+  hrd_last_seen TIMESTAMP DEFAULT NULL,
+  pelamar_last_seen TIMESTAMP DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (applicant_id) REFERENCES applicants(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+
+-- Table for Interview Chats
+CREATE TABLE IF NOT EXISTS interview_chats (
+  id SERIAL PRIMARY KEY,
+  room_id INTEGER NOT NULL,
+  sender_id INTEGER NOT NULL,
+  sender_name VARCHAR(255) NOT NULL,
+  sender_role VARCHAR(50) NOT NULL,
+  message TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (room_id) REFERENCES interview_rooms(id) ON DELETE CASCADE
+);
+
+
+-- Table for Psychotest Questions
+CREATE TABLE IF NOT EXISTS psychotest_questions (
+  id SERIAL PRIMARY KEY,
+  package_id INTEGER NOT NULL,
+  question_text TEXT NOT NULL,
+  correct_answer VARCHAR(255) DEFAULT '',
+  FOREIGN KEY (package_id) REFERENCES psychotest_packages(id) ON DELETE CASCADE
+);
+
+
+-- Table for Psychotest Answers
+CREATE TABLE IF NOT EXISTS psychotest_answers (
+  id SERIAL PRIMARY KEY,
+  applicant_id INTEGER NOT NULL UNIQUE,
+  answers_json TEXT NOT NULL,
+  submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (applicant_id) REFERENCES applicants(id) ON DELETE CASCADE
+);

@@ -70,7 +70,7 @@ function AppRoutes() {
       />
       
       <Route 
-        path="/interview-room/:id" 
+        path="/interview-room/:roomId" 
         element={
           <ProtectedRoute>
             <InterviewRoom />

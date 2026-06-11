@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 
 export default function Lowongan() {
-  const { jobs, addJob, updateJob, psychotestPackages, updateJobStatus, applicants } = useData();
+  const { jobs, addJob, updateJob, psychotestPackages, updateJobStatus, applicants, deleteJob } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -21,6 +21,7 @@ export default function Lowongan() {
   const [sharingJob, setSharingJob] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
   const [showJobSuccess, setShowJobSuccess] = useState(false);
+  const [deletingJobId, setDeletingJobId] = useState(null);
 
   // Form state
   const initialFormData = {
@@ -219,11 +220,11 @@ export default function Lowongan() {
                     <td className="px-6 py-4">
                       <div className="flex justify-center gap-6 text-center text-xs">
                         <div className="flex flex-col items-center">
-                          <span className="font-bold text-base text-gray-900 mb-1">{getApplicantCount(job.id, 'Belum Diproses')}</span>
+                          <span className="font-bold text-base text-gray-900 mb-1">{getApplicantCount(job.id, 'Menunggu')}</span>
                           <a href="#" className="text-gray-700 hover:text-blue-600 underline decoration-gray-300 underline-offset-4">Belum Diproses</a>
                         </div>
                         <div className="flex flex-col items-center">
-                          <span className="font-bold text-base text-gray-900 mb-1">{getApplicantCount(job.id, 'Terseleksi')}</span>
+                          <span className="font-bold text-base text-gray-900 mb-1">{getApplicantCount(job.id, 'Diterima')}</span>
                           <a href="#" className="text-gray-700 hover:text-blue-600 underline decoration-gray-300 underline-offset-4">Terseleksi</a>
                         </div>
                         <div className="flex flex-col items-center">
@@ -290,6 +291,12 @@ export default function Lowongan() {
                             className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
                           >
                             Salin link lowongan
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setDeletingJobId(job.id); setOpenActionId(null); }}
+                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 font-medium"
+                          >
+                            Hapus lowongan
                           </button>
                         </div>
                       )}
@@ -608,6 +615,45 @@ export default function Lowongan() {
             >
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Konfirmasi Hapus */}
+      {deletingJobId && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <X size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900 mb-2">Hapus Lowongan Pekerjaan?</h3>
+              <p className="text-sm text-gray-500 mb-6">
+                Apakah Anda yakin ingin menghapus lowongan ini? Tindakan ini akan menghapus semua data pelamar, chat, dan psikotes yang terkait dengan lowongan ini secara permanen.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setDeletingJobId(null)}
+                  className="flex-1 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Batal
+                </button>
+                <button 
+                  onClick={async () => {
+                    const res = await deleteJob(deletingJobId);
+                    if (res && res.success) {
+                      showToast('Lowongan berhasil dihapus.');
+                    } else {
+                      showToast(res?.error || 'Gagal menghapus lowongan.');
+                    }
+                    setDeletingJobId(null);
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Hapus
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
