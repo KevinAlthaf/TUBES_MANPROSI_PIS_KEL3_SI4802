@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { MessageCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import heroImage from '../assets/manprosi-hero.png';
 
 export default function Login() {
   const { login } = useAuth();
@@ -78,12 +79,12 @@ export default function Login() {
           </h1>
           <div className="relative w-full max-w-lg mt-8 z-10">
              {/* Fallback illustration using simple CSS shapes if image not found */}
-            <div className="w-full h-80 bg-orange-100 rounded-3xl relative overflow-hidden border-4 border-white shadow-xl flex items-center justify-center">
-              <img src="/src/assets/hero.png" alt="Illustration" className="absolute w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
-              <div className="text-center p-6 bg-white/80 backdrop-blur rounded-xl shadow-sm z-20">
-                <p className="font-semibold text-gray-800">Ilustrasi Dashboard KitaLulus</p>
-                <p className="text-sm text-gray-500">Gunakan image asli di folder assets</p>
-              </div>
+            <div className="w-full h-80 rounded-3xl relative overflow-hidden border-4 border-white shadow-xl">
+              <img 
+                src={heroImage} 
+                alt="Ilustrasi Manprosi" 
+                className="absolute w-full h-full object-cover" 
+              />
             </div>
             
             {/* Decorative elements */}
