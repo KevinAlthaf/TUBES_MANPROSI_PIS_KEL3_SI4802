@@ -10,6 +10,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import { analyzeCV, analyzeInterviewTranscript, analyzeNotes } from './gemini.js';
+
 // --- PERBAIKAN 1: Menyesuaikan folder uploads untuk Vercel ---
 // Vercel hanya mengizinkan pembuatan folder/file di dalam folder /tmp
 const uploadDir = process.env.VERCEL ? '/tmp/uploads' : 'uploads';
@@ -462,188 +464,63 @@ app.put('/api/applicants/:id/feedback', async (req, res) => {
   }
 });
 
+app.post('/api/applicants/:id/transcript/append', async (req, res) => {
+  const { id } = req.params;
+  const { senderName, text } = req.body;
+  try {
+    const [rows] = await db.query('SELECT interview_transcript FROM applicants WHERE id = ?', [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Pelamar tidak ditemukan.' });
+    
+    let current = rows[0].interview_transcript || '';
+    if (current && !current.endsWith('\n')) {
+      current += '\n';
+    }
+    const cleanText = (text || '').trim();
+    if (cleanText) {
+      current += `${senderName}: "${cleanText}"\n`;
+      await db.query('UPDATE applicants SET interview_transcript = ? WHERE id = ?', [current, id]);
+    }
+    res.json({ success: true, transcript: current });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.put('/api/applicants/:id/transcript', async (req, res) => {
   const { id } = req.params;
-  const { transcript } = req.body;
+  const { transcript: bodyTranscript } = req.body;
   try {
-    const [applicants] = await db.query('SELECT name FROM applicants WHERE id = ?', [id]);
-    const applicantName = applicants.length > 0 ? applicants[0].name : 'Kandidat';
-
-    let scoreVal = 75;
-    let generatedConclusion = 'Dipertimbangkan';
-    let notesReport = '';
-
-    // Check if Groq API Key is available in environment or .env file
-    let GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-    const envPath = path.join(__dirname, '..', '.env');
-    if (!GROQ_API_KEY && fs.existsSync(envPath)) {
-      try {
-        const envContent = fs.readFileSync(envPath, 'utf8');
-        const match = envContent.match(/GROQ_API_KEY\s*=\s*(.*)/);
-        if (match) {
-          GROQ_API_KEY = match[1].trim().replace(/['"]/g, '');
-        }
-      } catch (err) {
-        console.error("Failed to read .env file", err);
-      }
+    // Ambil data transkrip yang ada di DB serta detail pelamar/pekerjaan
+    const [appRows] = await db.query(`
+      SELECT a.name, a.interview_transcript, j.title as job_title 
+      FROM applicants a
+      JOIN jobs j ON a.job_id = j.id
+      WHERE a.id = ?
+    `, [id]);
+    
+    if (appRows.length === 0) {
+      return res.status(404).json({ error: 'Pelamar tidak ditemukan.' });
     }
 
-    if (GROQ_API_KEY) {
-      try {
-        console.log("Calling Groq LLM API for deep interview analysis...");
-        
-        const payload = {
-          model: 'llama-3.3-70b-versatile',
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'system',
-              content: `Anda adalah Asisten Rekrutmen AI tingkat lanjut. Tugas Anda adalah menganalisis transkrip percakapan wawancara antara HRD dan Pelamar secara kritis.
-Anda harus mengevaluasi sikap, kesesuaian budaya kerja, etika berbicara, dan motivasi pelamar secara objektif. Jika kandidat berkata kasar, tidak beretika, malas, atau menolak bekerja, Anda wajib memberikan skor sangat rendah (50-60) dan kesimpulan "Tidak Direkomendasikan".
-Format keluaran HARUS berupa objek JSON valid dengan struktur berikut:
-{
-  "score": 75,
-  "conclusion": "Dipertimbangkan",
-  "notes": "Laporan evaluasi Anda di sini dalam Bahasa Indonesia. Harap buat evaluasi yang konkret, detail, jujur, dan berikan poin-poin alasan dari transkrip wawancara. Hindari tanda kutip ganda di dalam string ini agar format JSON tidak rusak."
-}`
-            },
-            {
-              role: 'user',
-              content: `Nama Pelamar: ${applicantName}\n\nTranskrip Wawancara:\n"${transcript.trim()}"`
-            }
-          ],
-          temperature: 0.2
-        };
-
-        const postToGroq = (apiKey, payloadData) => {
-          return new Promise((resolve, reject) => {
-            const dataString = JSON.stringify(payloadData);
-            const options = {
-              hostname: 'api.groq.com',
-              port: 443,
-              path: '/openai/v1/chat/completions',
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Length': Buffer.byteLength(dataString)
-              }
-            };
-
-            const req = https.request(options, (res) => {
-              let body = '';
-              res.on('data', (chunk) => { body += chunk; });
-              res.on('end', () => {
-                if (res.statusCode >= 200 && res.statusCode < 300) {
-                  try {
-                    resolve(JSON.parse(body));
-                  } catch (e) {
-                    reject(new Error('Failed to parse Groq response JSON'));
-                  }
-                } else {
-                  reject(new Error(`Groq API status ${res.statusCode}: ${body}`));
-                }
-              });
-            });
-
-            req.on('error', (err) => { reject(err); });
-            req.write(dataString);
-            req.end();
-          });
-        };
-
-        const resData = await postToGroq(GROQ_API_KEY, payload);
-        const aiResult = JSON.parse(resData.choices[0].message.content);
-        
-        scoreVal = parseInt(aiResult.score) || 75;
-        generatedConclusion = aiResult.conclusion || 'Dipertimbangkan';
-        notesReport = `[TRANSKRIP ASLI WAWANCARA]:\n"${transcript.trim()}"\n\n[ANALISIS EVALUASI GROQ AI KONGKRIT]:\n${aiResult.notes}`;
-      } catch (aiErr) {
-        console.error("Groq API failed, falling back to local NLP engine...", aiErr.message);
-        GROQ_API_KEY = ''; // Force local fallback
-      }
+    const applicantName = appRows[0].name;
+    const jobTitle = appRows[0].job_title;
+    
+    // Gunakan transkrip terakumulasi dari DB. Jika kosong, gunakan data yang dikirim di body
+    let finalTranscript = appRows[0].interview_transcript || '';
+    if (!finalTranscript.trim() && bodyTranscript) {
+      finalTranscript = bodyTranscript;
     }
 
-    // Local NLP Fallback (Runs if no key or API fails)
-    if (!GROQ_API_KEY) {
-      console.log("Using Local Rule-Based NLP Parser...");
-      const t = (transcript || '').toLowerCase();
-      
-      const techs = [];
-      if (t.includes('react')) techs.push('React.js');
-      if (t.includes('javascript') || t.includes(' js ')) techs.push('JavaScript (ES6+)');
-      if (t.includes('node') || t.includes('express')) techs.push('Node.js / Express');
-      if (t.includes('mysql') || t.includes('database') || t.includes('sql')) techs.push('MySQL / Relational Database');
-      if (t.includes('laravel') || t.includes('php')) techs.push('PHP / Laravel');
-      if (t.includes('tailwind') || t.includes('css') || t.includes('html')) techs.push('HTML5 & Modern CSS (Tailwind)');
-      if (t.includes('python')) techs.push('Python');
-      if (t.includes('ui') || t.includes('ux') || t.includes('figma')) techs.push('UI/UX Design / Figma');
-      if (t.includes('git') || t.includes('github')) techs.push('Version Control (Git/GitHub)');
-
-      const positiveTraits = [];
-      if (t.includes('komunikasi') || t.includes('bicara') || t.includes('lancar')) positiveTraits.push('Kemampuan komunikasi verbal yang sangat lugas dan asertif');
-      if (t.includes('tim') || t.includes('kolaborasi') || t.includes('kelompok')) positiveTraits.push('Semangat kerja sama tim (teamwork) dan kolaboratif yang baik');
-      if (t.includes('disiplin') || t.includes('waktu') || t.includes('komitmen')) positiveTraits.push('Komitmen tinggi terhadap ketepatan waktu dan tenggat pekerjaan');
-      if (t.includes('belajar') || t.includes('adaptasi') || t.includes('baru')) positiveTraits.push('Hasrat belajar yang besar dan kemudahan beradaptasi dengan teknologi baru');
-      if (t.includes('pimpin') || t.includes('lead') || t.includes('organisasi')) positiveTraits.push('Potensi kepemimpinan (leadership) dan inisiatif organisasi yang matang');
-
-      const concerns = [];
-      if (t.includes('gugup') || t.includes('grogi') || t.includes('malu')) concerns.push('Kandidat terlihat agak gugup/kurang tenang saat menjawab pertanyaan kompleks');
-      if (t.includes('kurang') || t.includes('lemah') || t.includes('terbatas')) concerns.push('Adanya keterbatasan pengalaman praktis pada beberapa sub-teknologi yang ditanyakan');
-      if (t.includes('lambat') || t.includes('lama')) concerns.push('Respons verbal terkadang lambat atau memerlukan waktu berpikir yang cukup lama');
-      if (t.includes('pindah') || t.includes('keluar') || t.includes('resign')) concerns.push('Perlu konfirmasi lebih lanjut terkait stabilitas/komitmen jangka panjang');
-      if (t.includes('gaji') || t.includes('nego')) concerns.push('Ekspektasi kompensasi/gaji yang dinegosiasikan cukup tinggi');
-
-      let localScore = 75;
-      localScore += techs.length * 3;
-      localScore += positiveTraits.length * 4;
-      localScore -= concerns.length * 6;
-      
-      scoreVal = Math.min(98, Math.max(50, localScore));
-
-      let summarySentence = '';
-      if (scoreVal >= 83) {
-        generatedConclusion = 'Layak Diterima';
-        summarySentence = `Kandidat sangat direkomendasikan untuk bergabung karena menguasai kompetensi inti dengan matang, komunikatif, dan selaras dengan standar tim rekruter.`;
-      } else if (scoreVal >= 65) {
-        generatedConclusion = 'Dipertimbangkan';
-        summarySentence = `Kandidat dinilai memiliki dasar yang memadai, namun memerlukan onboarding atau masa bimbingan terarah (mentoring) di awal kerja untuk memperkuat area yang dinilai kurang optimal.`;
-      } else {
-        generatedConclusion = 'Tidak Direkomendasikan';
-        summarySentence = `Berdasarkan hasil diskusi, kandidat belum memenuhi standar minimum kompetensi atau keselarasan profesional yang dibutuhkan untuk posisi ini.`;
-      }
-
-      notesReport = `[TRANSKRIP ASLI WAWANCARA]:\n"${transcript.trim()}"\n\n`;
-      notesReport += `[ANALISIS EVALUASI AI YANG KONGKRIT (LOCAL NLP FALLBACK)]:\n`;
-      notesReport += `1. KESIMPULAN UMUM:\n   - ${summarySentence}\n\n`;
-      notesReport += `2. KEKUATAN & KOMPETENSI TERDETEKSI (KONGKRIT):\n`;
-      if (techs.length > 0) {
-        notesReport += `   * Keterampilan Teknis: Fasih membahas konsep ${techs.join(', ')}.\n`;
-      } else {
-        notesReport += `   * Keterampilan Teknis: Memiliki konsep dasar pemrograman umum.\n`;
-      }
-      if (positiveTraits.length > 0) {
-        notesReport += positiveTraits.map(p => `   * Soft Skill: ${p}.`).join('\n') + '\n\n';
-      } else {
-        notesReport += `   * Soft Skill: Komunikasi interaktif selama sesi diskusi berlangsung.\n\n`;
-      }
-
-      notesReport += `3. ASPEK YANG PERLU DIPERHATIKAN / DIWASPADAI:\n`;
-      if (concerns.length > 0) {
-        notesReport += concerns.map(c => `   * Catatan Khusus: ${c}.`).join('\n') + '\n\n';
-      } else {
-        notesReport += `   * Catatan Khusus: Tidak terdeteksi adanya bendera merah (red flags) atau keraguan komunikasi yang signifikan selama interview.\n\n`;
-      }
-
-      notesReport += `4. REKOMENDASI TINDAKAN:\n`;
-      if (generatedConclusion === 'Layak Diterima') {
-        notesReport += `   - Segera kirimkan Offering Letter resmi dan jadwalkan sesi onboarding.\n`;
-      } else if (generatedConclusion === 'Dipertimbangkan') {
-        notesReport += `   - Disarankan melakukan review portofolio tambahan atau wawancara teknis tahap kedua.\n`;
-      } else {
-        notesReport += `   - Kirimkan email penolakan ramah dan arsipkan data kandidat untuk masa depan.\n`;
-      }
+    if (!finalTranscript.trim()) {
+      return res.status(400).json({ error: 'Transkrip kosong, tidak ada percakapan untuk dianalisis.' });
     }
+
+    console.log(`Menjalankan analisis transkrip Gemini AI untuk kandidat ${applicantName}...`);
+    const analysis = await analyzeInterviewTranscript(finalTranscript, applicantName, jobTitle);
+
+    const scoreVal = analysis.score || 75;
+    const generatedConclusion = analysis.conclusion || 'Dipertimbangkan';
+    const notesReport = `[TRANSKRIP ASLI WAWANCARA]:\n"${finalTranscript.trim()}"\n\n[ANALISIS EVALUASI GEMINI AI]:\n${analysis.notes}`;
 
     await db.query(
       `UPDATE applicants SET 
@@ -652,99 +529,25 @@ Format keluaran HARUS berupa objek JSON valid dengan struktur berikut:
         interview_notes = ?, 
         interview_conclusion = ? 
        WHERE id = ?`,
-      [transcript, scoreVal, notesReport, generatedConclusion, id]
+      [finalTranscript, scoreVal, notesReport, generatedConclusion, id]
     );
 
     res.json({ success: true, score: scoreVal, notes: notesReport, conclusion: generatedConclusion });
   } catch (error) {
+    console.error("Gagal menganalisis transkrip wawancara:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/api/ai/analyze-notes', async (req, res) => {
   const { notes, score } = req.body;
-  
-  let GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-  const envPath = path.join(__dirname, '..', '.env');
-  if (!GROQ_API_KEY && fs.existsSync(envPath)) {
-    try {
-      const envContent = fs.readFileSync(envPath, 'utf8');
-      const match = envContent.match(/GROQ_API_KEY\s*=\s*(.*)/);
-      if (match) {
-        GROQ_API_KEY = match[1].trim().replace(/['"]/g, '');
-      }
-    } catch (err) {}
+  try {
+    console.log("Menjalankan analisis ringkasan catatan wawancara menggunakan Gemini...");
+    const summary = await analyzeNotes(notes, score);
+    res.json({ success: true, summary });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-
-  if (GROQ_API_KEY) {
-    try {
-      const payload = {
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          {
-            role: 'system',
-            content: `Anda adalah Asisten HRD AI tingkat lanjut. Tugas Anda adalah membaca catatan wawancara singkat tentang seorang kandidat dengan skor ${score}/100, lalu merumuskan sebuah ringkasan kesimpulan evaluasi yang sangat profesional, terstruktur, objektif, dan tepercaya dalam Bahasa Indonesia.
-Format keluaran wajib berupa penjelasan mengalir yang padat (1 paragraf) tanpa awalan JSON atau tanda kutip pembungkus.`
-          },
-          {
-            role: 'user',
-            content: `Catatan Wawancara:\n"${notes.trim()}"`
-          }
-        ],
-        temperature: 0.3
-      };
-
-      const postToGroq = (apiKey, payloadData) => {
-        return new Promise((resolve, reject) => {
-          const dataString = JSON.stringify(payloadData);
-          const options = {
-            hostname: 'api.groq.com',
-            port: 443,
-            path: '/openai/v1/chat/completions',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Length': Buffer.byteLength(dataString)
-            }
-          };
-
-          const req = https.request(options, (res) => {
-            let body = '';
-            res.on('data', (chunk) => { body += chunk; });
-            res.on('end', () => {
-              if (res.statusCode >= 200 && res.statusCode < 300) {
-                resolve(JSON.parse(body));
-              } else {
-                reject(new Error(`Groq status ${res.statusCode}`));
-              }
-            });
-          });
-
-          req.on('error', (err) => { reject(err); });
-          req.write(dataString);
-          req.end();
-        });
-      };
-
-      const resData = await postToGroq(GROQ_API_KEY, payload);
-      const aiSummary = resData.choices[0].message.content.trim();
-      return res.json({ success: true, summary: aiSummary });
-    } catch (err) {
-      console.error("Groq analyze-notes failed, falling back...", err.message);
-    }
-  }
-
-  const scoreVal = parseInt(score) || 80;
-  let summary = '';
-  if (scoreVal >= 80) {
-    summary = `Kandidat dinilai luar biasa dan berkompetensi tinggi. Komunikasi sangat matang, profesional, dan terstruktur. Logika pemecahan masalah dan wawasan teknisnya sangat memadai untuk standar tim.`;
-  } else if (scoreVal >= 60) {
-    summary = `Kandidat memiliki kompetensi dasar yang cukup solid, namun masih memerlukan pembelajaran tambahan untuk level tingkat lanjut. Menunjukkan motivasi belajar yang tinggi untuk berkembang.`;
-  } else {
-    summary = `Kandidat belum memenuhi ekspektasi standar minimum yang ditentukan. Pemahaman konsep pemrograman dasar dan wawasan praktis masih terbatas.`;
-  }
-  res.json({ success: true, summary });
 });
 
 app.put('/api/applications/finish-interview/:userId', async (req, res) => {
@@ -763,7 +566,7 @@ app.put('/api/applications/finish-interview/:userId', async (req, res) => {
     }
 
     await db.query(
-      'UPDATE applicants SET status = "Menunggu Hasil", interview_score = ?, interview_notes = ?, interview_conclusion = ? WHERE user_id = ? AND status = "Interview"', 
+      "UPDATE applicants SET status = 'Menunggu Hasil', interview_score = ?, interview_notes = ?, interview_conclusion = ? WHERE user_id = ? AND status = 'Interview'", 
       [scoreVal, notes, summary, userId]
     );
     res.json({ success: true });
@@ -792,12 +595,111 @@ app.get('/api/applications/:userId', async (req, res) => {
 app.post('/api/applications', async (req, res) => {
   const { userId, jobId, name, cv } = req.body;
   try {
+    // 1. Ambil data lowongan
+    const [jobRows] = await db.query('SELECT * FROM jobs WHERE id = ?', [jobId]);
+    if (jobRows.length === 0) return res.status(404).json({ error: 'Lowongan tidak ditemukan.' });
+    const job = jobRows[0];
+
+    // 2. Ambil profil pelamar
+    const [profRows] = await db.query('SELECT * FROM pelamar_profiles WHERE user_id = ?', [userId]);
+    const profile = profRows[0] || {};
+
+    // 3. Baca CV jika formatnya PDF dan filenya ada
+    let pdfBuffer = null;
+    let mimeType = null;
+    if (cv && cv.toLowerCase().endsWith('.pdf')) {
+      const filePath = path.join(uploadDir, cv);
+      if (fs.existsSync(filePath)) {
+        try {
+          pdfBuffer = fs.readFileSync(filePath);
+          mimeType = 'application/pdf';
+        } catch (err) {
+          console.error("Gagal membaca file CV PDF pelamar:", err);
+        }
+      }
+    }
+
+    // 4. Jalankan analisis CV menggunakan Gemini AI
+    console.log(`Menjalankan analisis CV Gemini AI untuk pelamar ${name}...`);
+    const matchResult = await analyzeCV(job, profile, pdfBuffer, mimeType);
+    const strengthsJson = JSON.stringify(matchResult.strengths || []);
+    const weaknessesJson = JSON.stringify(matchResult.weaknesses || []);
+
     const [result] = await db.query(
-      'INSERT INTO applicants (user_id, job_id, name, cv, match_score) VALUES (?, ?, ?, ?, ?)',
-      [userId, jobId, name, cv, Math.floor(Math.random() * 40) + 60] // mock score
+      `INSERT INTO applicants (user_id, job_id, name, cv, match_score, ai_strengths, ai_weaknesses, ai_conclusion) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId, 
+        jobId, 
+        name, 
+        cv, 
+        matchResult.match_score || 70, 
+        strengthsJson, 
+        weaknessesJson, 
+        matchResult.conclusion || ''
+      ]
     );
     res.status(201).json({ success: true, id: result.insertId });
   } catch (error) {
+    console.error("Error saat menyimpan lamaran pelamar:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/applicants/:id/analyze-cv', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [appRows] = await db.query('SELECT * FROM applicants WHERE id = ?', [id]);
+    if (appRows.length === 0) return res.status(404).json({ error: 'Pelamar tidak ditemukan.' });
+    const app = appRows[0];
+    
+    const [jobRows] = await db.query('SELECT * FROM jobs WHERE id = ?', [app.job_id]);
+    if (jobRows.length === 0) return res.status(404).json({ error: 'Lowongan tidak ditemukan.' });
+    const job = jobRows[0];
+
+    const [profRows] = await db.query('SELECT * FROM pelamar_profiles WHERE user_id = ?', [app.user_id]);
+    const profile = profRows[0] || {};
+    
+    let pdfBuffer = null;
+    let mimeType = null;
+    if (app.cv && app.cv.toLowerCase().endsWith('.pdf')) {
+      const filePath = path.join(uploadDir, app.cv);
+      if (fs.existsSync(filePath)) {
+        try {
+          pdfBuffer = fs.readFileSync(filePath);
+          mimeType = 'application/pdf';
+        } catch (err) {
+          console.error("Gagal membaca file CV PDF pelamar:", err);
+        }
+      }
+    }
+
+    console.log(`Menjalankan re-analisis CV Gemini AI untuk pelamar ${app.name}...`);
+    const matchResult = await analyzeCV(job, profile, pdfBuffer, mimeType);
+    const strengthsJson = JSON.stringify(matchResult.strengths || []);
+    const weaknessesJson = JSON.stringify(matchResult.weaknesses || []);
+
+    await db.query(
+      `UPDATE applicants SET 
+        match_score = ?, 
+        ai_strengths = ?, 
+        ai_weaknesses = ?, 
+        ai_conclusion = ? 
+       WHERE id = ?`,
+      [matchResult.match_score || 70, strengthsJson, weaknessesJson, matchResult.conclusion || '', id]
+    );
+
+    res.json({
+      success: true,
+      matchScore: matchResult.match_score,
+      aiMatchDetails: {
+        strengths: matchResult.strengths || [],
+        weaknesses: matchResult.weaknesses || [],
+        conclusion: matchResult.conclusion || ''
+      }
+    });
+  } catch (error) {
+    console.error("Gagal melakukan re-analisis CV:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -840,7 +742,7 @@ app.get('/api/interview-rooms/applicant/:applicantId', async (req, res) => {
   const { applicantId } = req.params;
   try {
     const [rows] = await db.query(
-      "SELECT * FROM interview_rooms WHERE applicant_id = ? AND status != 'ended' ORDER BY created_at DESC LIMIT 1",
+      "SELECT * FROM interview_rooms WHERE applicant_id = ? ORDER BY created_at DESC LIMIT 1",
       [applicantId]
     );
     if (rows.length > 0) {
@@ -858,12 +760,13 @@ app.get('/api/interview-rooms/:roomId', async (req, res) => {
   const { roomId } = req.params;
   try {
     const [rows] = await db.query(
-      `SELECT ir.*, a.name as applicant_name, a.user_id as applicant_user_id, a.job_id,
-              j.title as job_title, u.name as hrd_name
+      `SELECT ir.*, a.status as applicant_status, a.name as applicant_name, a.user_id as applicant_user_id, a.job_id,
+              j.title as job_title, COALESCE(u_hrd.name, u_creator.name) as hrd_name
        FROM interview_rooms ir
        JOIN applicants a ON ir.applicant_id = a.id
        JOIN jobs j ON a.job_id = j.id
-       JOIN users u ON ir.created_by = u.id
+       JOIN users u_creator ON ir.created_by = u_creator.id
+       LEFT JOIN users u_hrd ON j.hr_id = u_hrd.id
        WHERE ir.id = ?`,
       [roomId]
     );

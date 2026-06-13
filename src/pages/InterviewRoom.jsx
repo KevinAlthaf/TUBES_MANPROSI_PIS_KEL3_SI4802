@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MonitorUp, Settings, Mic, MicOff, Video, VideoOff, MessageSquare, X, Send, Users, Loader2 } from 'lucide-react';
+import { MonitorUp, Settings, Mic, MicOff, Video, VideoOff, MessageSquare, X, Send, Users, Loader2, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -127,6 +127,14 @@ export default function InterviewRoom() {
     return () => clearInterval(interval);
   }, [fetchNewChats, roomData]);
 
+  // Refs to avoid stale closures in Speech Recognition
+  const roomDataRef = useRef(null);
+  const userRef = useRef(null);
+  useEffect(() => {
+    roomDataRef.current = roomData;
+    userRef.current = user;
+  }, [roomData, user]);
+
   // ============================
   // 4. SPEECH RECOGNITION
   // ============================
@@ -154,6 +162,16 @@ export default function InterviewRoom() {
 
         if (localFinal.trim()) {
           setTranscript(prev => prev + localFinal);
+          const currentRoom = roomDataRef.current;
+          const currentUser = userRef.current;
+          if (currentRoom?.applicant_id) {
+            const displayName = currentUser?.role === 'HRD' ? `HRD (${currentUser.name})` : currentUser?.name || currentUser?.role || 'Pelamar';
+            fetch(`${API_URL}/applicants/${currentRoom.applicant_id}/transcript/append`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ senderName: displayName, text: localFinal })
+            }).catch(err => console.error("Gagal mengirim potongan transkrip ke backend:", err));
+          }
         }
         
         setInterimText(interimTranscript);
@@ -368,6 +386,35 @@ export default function InterviewRoom() {
     );
   }
 
+  const isPelamar = user?.role === 'Pelamar';
+  const isFinished = roomData?.status === 'ended' || (isPelamar && roomData?.applicant_status && roomData.applicant_status !== 'Interview');
+
+  if (isFinished && isPelamar) {
+    return (
+      <div className="min-h-screen bg-[#1a1c29] flex items-center justify-center font-sans p-4">
+        <div className="bg-[#242736] p-8 rounded-3xl border border-gray-800 text-center max-w-md shadow-2xl relative overflow-hidden">
+          {/* Decorative glows */}
+          <div className="absolute -top-12 -left-12 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl"></div>
+          <div className="absolute -bottom-12 -right-12 w-24 h-24 bg-indigo-500/10 rounded-full blur-2xl"></div>
+
+          <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-500/20 shadow-[0_0_20px_rgba(34,197,94,0.15)] animate-pulse">
+            <CheckCircle2 size={40} className="text-green-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-3 tracking-wide">Wawancara Selesai</h2>
+          <p className="text-gray-400 text-sm leading-relaxed mb-8">
+            Terima kasih telah mengikuti sesi wawancara untuk posisi <span className="text-blue-400 font-semibold">{roomData.job_title}</span>. Evaluasi Anda sedang diproses oleh tim HRD perusahaan.
+          </p>
+          <button 
+            onClick={() => navigate('/pelamar/status-lamaran')}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-bold transition-all hover:shadow-[0_0_20px_rgba(37,99,235,0.4)]"
+          >
+            Kembali ke Status Lamaran
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Determine who is the counterpart
   const isHRD = user?.role === 'HRD' || user?.role === 'Operator';
   const counterpartName = isHRD ? roomData.applicant_name : roomData.hrd_name;
@@ -437,7 +484,7 @@ export default function InterviewRoom() {
             )}
             <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg text-white text-xs font-medium flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-400"></span>
-              Anda ({user?.name || user?.role}) {!isMicOn && ' - Muted'}
+              {user?.name || (isHRD ? 'HRD' : 'Pelamar')} (Anda) {!isMicOn && ' - Muted'}
             </div>
           </div>
 
@@ -569,11 +616,15 @@ export default function InterviewRoom() {
         <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-3 text-xs">
           <div className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full ${hrdOnline ? 'bg-green-400' : 'bg-gray-300'}`}></span>
-            <span className={hrdOnline ? 'text-green-700 font-medium' : 'text-gray-400'}>{isHRD ? 'Anda (HRD)' : roomData.hrd_name}</span>
+            <span className={hrdOnline ? 'text-green-700 font-medium' : 'text-gray-400'}>
+              {isHRD ? `${roomData.hrd_name || user?.name || 'HRD'} (Anda)` : (roomData.hrd_name || 'HRD')}
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full ${pelamarOnline ? 'bg-green-400' : 'bg-gray-300'}`}></span>
-            <span className={pelamarOnline ? 'text-green-700 font-medium' : 'text-gray-400'}>{!isHRD ? 'Anda (Pelamar)' : roomData.applicant_name}</span>
+            <span className={pelamarOnline ? 'text-green-700 font-medium' : 'text-gray-400'}>
+              {!isHRD ? `${roomData.applicant_name || user?.name || 'Pelamar'} (Anda)` : (roomData.applicant_name || 'Pelamar')}
+            </span>
           </div>
         </div>
         

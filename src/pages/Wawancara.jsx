@@ -51,7 +51,7 @@ function EnterRoomButton({ applicantId }) {
 }
 
 export default function Wawancara() {
-  const { applicants, jobs, updateApplicantStatus, addInterviewFeedback } = useData();
+  const { applicants, jobs, updateApplicantStatus, addInterviewFeedback, fetchData } = useData();
 
   const interviewCandidates = applicants.filter(a => a.status === 'Interview');
 
@@ -62,6 +62,32 @@ export default function Wawancara() {
   const [notes, setNotes] = useState('');
   const [conclusion, setConclusion] = useState('Layak Diterima');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const handleAiAnalyzeTranscript = async () => {
+    if (!selectedCandidate?.interview_transcript) return;
+    setIsAnalyzing(true);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      const res = await fetch(`${API_URL}/applicants/${selectedCandidate.id}/transcript`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: selectedCandidate.interview_transcript })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setScore(data.score);
+        setNotes(data.notes);
+        setConclusion(data.conclusion);
+      } else {
+        alert("Gagal menganalisis transkrip.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan koneksi.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   // Helper to generate deterministic AI evaluation summary if none exists
   const getAutoAiSummary = (app) => {
@@ -209,6 +235,7 @@ export default function Wawancara() {
     });
 
     if (success) {
+      await fetchData();
       setIsModalOpen(false);
     }
   };
@@ -361,6 +388,33 @@ export default function Wawancara() {
 
             {/* Modal Body */}
             <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh]">
+
+              {/* Transcript Section */}
+              {selectedCandidate?.interview_transcript && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Transkrip Percakapan Wawancara (Real-Time)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleAiAnalyzeTranscript}
+                      disabled={isAnalyzing}
+                      className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      {isAnalyzing ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                      Analisis Transkrip dengan Gemini AI
+                    </button>
+                  </div>
+                  <div className="text-xs text-slate-700 bg-white border border-slate-100 p-3 rounded-lg max-h-[140px] overflow-y-auto whitespace-pre-line text-left font-mono">
+                    {selectedCandidate.interview_transcript}
+                  </div>
+                </div>
+              )}
               
               {/* Score Input */}
               <div>
