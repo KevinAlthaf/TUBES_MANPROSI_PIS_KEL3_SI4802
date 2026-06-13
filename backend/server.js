@@ -566,7 +566,7 @@ app.put('/api/applications/finish-interview/:userId', async (req, res) => {
     }
 
     await db.query(
-      'UPDATE applicants SET status = "Menunggu Hasil", interview_score = ?, interview_notes = ?, interview_conclusion = ? WHERE user_id = ? AND status = "Interview"', 
+      "UPDATE applicants SET status = 'Menunggu Hasil', interview_score = ?, interview_notes = ?, interview_conclusion = ? WHERE user_id = ? AND status = 'Interview'", 
       [scoreVal, notes, summary, userId]
     );
     res.json({ success: true });
