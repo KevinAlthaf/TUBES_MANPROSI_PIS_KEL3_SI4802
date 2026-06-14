@@ -126,12 +126,29 @@ const upload = multer({ storage });
     await db.query(`
       CREATE TABLE IF NOT EXISTS psychotest_packages (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL UNIQUE
+        name VARCHAR(255) NOT NULL UNIQUE,
+        status VARCHAR(50) DEFAULT 'draft'
       )
     `);
     console.log('Ensured psychotest_packages table exists');
   } catch (e) {
     console.error('Error creating psychotest_packages:', e.message);
+  }
+
+  // Migration for status column
+  try {
+    await db.query("ALTER TABLE psychotest_packages ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'draft'");
+    await db.query("UPDATE psychotest_packages SET status = 'published' WHERE status IS NULL");
+    console.log('Migrated psychotest_packages status column');
+  } catch (e) {
+    // If ALTER TABLE throws (e.g. duplicate column or keyword mismatch), handle gracefully
+    try {
+      await db.query("ALTER TABLE psychotest_packages ADD COLUMN status VARCHAR(50) DEFAULT 'draft'");
+      await db.query("UPDATE psychotest_packages SET status = 'published' WHERE status IS NULL");
+      console.log('Fallback: Migrated psychotest_packages status column');
+    } catch (err) {
+      console.error('Error migrating psychotest_packages status:', err.message);
+    }
   }
 
   // Table for Psychotest Questions
@@ -169,9 +186,9 @@ const upload = multer({ storage });
     const [pkgCheck] = await db.query('SELECT COUNT(*) as count FROM psychotest_packages');
     if (parseInt(pkgCheck[0].count) === 0) {
       console.log('Seeding default psychotest packages & questions...');
-      const [resA] = await db.query("INSERT INTO psychotest_packages (name) VALUES ('Paket A (General Intelligence & Logic)')");
-      const [resB] = await db.query("INSERT INTO psychotest_packages (name) VALUES ('Paket B (Numerical & Analytical)')");
-      const [resC] = await db.query("INSERT INTO psychotest_packages (name) VALUES ('Paket C (Komprehensif)')");
+      const [resA] = await db.query("INSERT INTO psychotest_packages (name, status) VALUES ('Paket A (General Intelligence & Logic)', 'published')");
+      const [resB] = await db.query("INSERT INTO psychotest_packages (name, status) VALUES ('Paket B (Numerical & Analytical)', 'published')");
+      const [resC] = await db.query("INSERT INTO psychotest_packages (name, status) VALUES ('Paket C (Komprehensif)', 'published')");
 
       const idA = resA.insertId;
       const idB = resB.insertId;
@@ -874,7 +891,7 @@ app.get('/api/interview-rooms/all/:applicantId', async (req, res) => {
 // --- PSYCHOTEST PACKAGES ENDPOINTS ---
 app.get('/api/packages', async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT name FROM psychotest_packages');
+    const [rows] = await db.query("SELECT name FROM psychotest_packages WHERE status = 'published'");
     res.json(rows.map(r => r.name));
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -884,8 +901,8 @@ app.get('/api/packages', async (req, res) => {
 app.post('/api/packages', async (req, res) => {
   const { name } = req.body;
   try {
-    await db.query('INSERT INTO psychotest_packages (name) VALUES (?)', [name]);
-    res.status(201).json({ name });
+    await db.query("INSERT INTO psychotest_packages (name, status) VALUES (?, 'draft')", [name]);
+    res.status(201).json({ name, status: 'draft' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -901,6 +918,7 @@ app.get('/api/packages-full', async (req, res) => {
     const result = packages.map(pkg => ({
       id: pkg.id,
       name: pkg.name,
+      status: pkg.status || 'draft',
       questions: questions
         .filter(q => q.package_id === pkg.id)
         .map(q => ({
@@ -921,8 +939,19 @@ app.get('/api/packages-full', async (req, res) => {
 app.post('/api/packages-full', async (req, res) => {
   const { name } = req.body;
   try {
-    const [result] = await db.query('INSERT INTO psychotest_packages (name) VALUES (?)', [name]);
-    res.status(201).json({ id: result.insertId, name, questions: [] });
+    const [result] = await db.query("INSERT INTO psychotest_packages (name, status) VALUES (?, 'draft')", [name]);
+    res.status(201).json({ id: result.insertId, name, status: 'draft', questions: [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Publish a package
+app.put('/api/packages-full/:id/publish', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query("UPDATE psychotest_packages SET status = 'published' WHERE id = ?", [id]);
+    res.json({ success: true, id: parseInt(id), status: 'published' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

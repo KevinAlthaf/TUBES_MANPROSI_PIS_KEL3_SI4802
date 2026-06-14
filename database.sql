@@ -3,13 +3,14 @@
 -- Table for Psychotest Packages
 CREATE TABLE IF NOT EXISTS psychotest_packages (
   id SERIAL PRIMARY KEY,
-  name VARCHAR(255) NOT NULL
+  name VARCHAR(255) NOT NULL UNIQUE,
+  status VARCHAR(50) NOT NULL DEFAULT 'draft'
 );
 
-INSERT INTO psychotest_packages (name) VALUES
-('Paket A (Logika Umum & Deret Angka)'),
-('Paket B (Kepribadian & Studi Kasus)'),
-('Paket C (Komprehensif)');
+INSERT INTO psychotest_packages (name, status) VALUES
+('Paket A (Logika Umum & Deret Angka)', 'published'),
+('Paket B (Kepribadian & Studi Kasus)', 'published'),
+('Paket C (Komprehensif)', 'published');
 
 
 -- Table for Jobs
