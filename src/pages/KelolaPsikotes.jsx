@@ -22,6 +22,15 @@ export default function KelolaPsikotes() {
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState('');
 
+  // Edit Question Form State
+  const [editingQuestionId, setEditingQuestionId] = useState(null);
+  const [editQuestionText, setEditQuestionText] = useState('');
+  const [editOptionA, setEditOptionA] = useState('');
+  const [editOptionB, setEditOptionB] = useState('');
+  const [editOptionC, setEditOptionC] = useState('');
+  const [editOptionD, setEditOptionD] = useState('');
+  const [editCorrectAnswer, setEditCorrectAnswer] = useState('A');
+
   const showToast = (message) => {
     setToastMessage(message);
     setTimeout(() => {
@@ -46,6 +55,81 @@ export default function KelolaPsikotes() {
         showToast(`Paket "${name}" berhasil diupload ke HRD!`);
       } else {
         showToast("Gagal mengupload paket ke HRD.");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Koneksi backend gagal.");
+    }
+  };
+
+  const startEditingQuestion = (item) => {
+    setEditingQuestionId(item.id);
+    setEditQuestionText(item.q || '');
+    setEditOptionA(item.options?.[0] || '');
+    setEditOptionB(item.options?.[1] || '');
+    setEditOptionC(item.options?.[2] || '');
+    setEditOptionD(item.options?.[3] || '');
+    setEditCorrectAnswer(item.a || 'A');
+  };
+
+  const handleUpdateQuestion = async (packageId, questionId) => {
+    if (!editQuestionText.trim()) {
+      alert("Teks pertanyaan tidak boleh kosong.");
+      return;
+    }
+    if (!editOptionA.trim() || !editOptionB.trim() || !editOptionC.trim() || !editOptionD.trim()) {
+      alert("Semua pilihan ganda (A, B, C, D) harus diisi.");
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/questions-full/${questionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionText: editQuestionText.trim(),
+          correctAnswer: editCorrectAnswer,
+          options: [editOptionA.trim(), editOptionB.trim(), editOptionC.trim(), editOptionD.trim()]
+        })
+      });
+
+      if (res.ok) {
+        const updatedQuestion = await res.json();
+        
+        // Update local state for editingPackage
+        setEditingPackage(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            questions: prev.questions.map(q => q.id === questionId ? {
+              ...q,
+              q: updatedQuestion.questionText,
+              a: updatedQuestion.correctAnswer,
+              options: updatedQuestion.options
+            } : q)
+          };
+        });
+
+        // Update local state for packages list
+        setPackages(prev => prev.map(p => {
+          if (p.id === packageId) {
+            return {
+              ...p,
+              questions: p.questions.map(q => q.id === questionId ? {
+                ...q,
+                q: updatedQuestion.questionText,
+                a: updatedQuestion.correctAnswer,
+                options: updatedQuestion.options
+              } : q)
+            };
+          }
+          return p;
+        }));
+
+        setEditingQuestionId(null);
+        showToast("Pertanyaan berhasil diperbarui!");
+      } else {
+        showToast("Gagal memperbarui pertanyaan.");
       }
     } catch (error) {
       console.error(error);
@@ -199,7 +283,7 @@ export default function KelolaPsikotes() {
   return (
     <div className="space-y-6 relative">
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
+        <div className="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 z-[9999] animate-in fade-in slide-in-from-bottom-5 duration-300">
           <Check size={18} className="text-green-400" />
           <span className="text-sm font-medium">{toastMessage}</span>
         </div>
@@ -304,7 +388,7 @@ export default function KelolaPsikotes() {
                         }}
                         className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-semibold text-xs whitespace-nowrap"
                       >
-                        <Edit size={14} /> Kelola Pertanyaan
+                        <Edit size={14} /> Review & Edit
                       </button>
                       <button 
                         onClick={() => handleDeletePackage(pkg.id, pkg.name)}
@@ -329,7 +413,7 @@ export default function KelolaPsikotes() {
             {/* Modal Header */}
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
               <div>
-                <h3 className="text-lg font-bold text-gray-950">Kelola Pertanyaan Psikotes</h3>
+                <h3 className="text-lg font-bold text-gray-950">Review & Edit Pertanyaan</h3>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   <p className="text-gray-500 text-xs">Paket: <span className="font-bold text-blue-600">{editingPackage.name}</span></p>
                   {editingPackage.status === 'published' ? (
@@ -443,39 +527,145 @@ export default function KelolaPsikotes() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {editingPackage.questions.map((item, idx) => (
-                      <div key={item.id || idx} className="bg-white border border-gray-150 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative">
-                        <button 
-                          onClick={() => handleDeleteQuestion(editingPackage.id, item.id)}
-                          className="absolute top-4 right-4 text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Hapus Soal"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                        <div className="font-bold text-blue-600 text-xs mb-2">SOAL #{idx + 1}</div>
-                        <p className="text-gray-800 text-sm whitespace-pre-wrap pr-8 mb-3 font-semibold leading-relaxed">
-                          {item.q}
-                        </p>
-                        
-                        {item.options && item.options.length > 0 ? (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 bg-gray-55/40 p-3 rounded-lg border border-gray-100">
-                            {item.options.map((opt, i) => {
-                              const letter = String.fromCharCode(65 + i);
-                              const isCorrect = item.a === letter;
-                              return (
-                                <div key={i} className={`text-xs p-2 rounded-md font-medium border ${isCorrect ? 'bg-green-50 border-green-200 text-green-800' : 'bg-white border-gray-150 text-gray-700'}`}>
-                                  <span className="font-bold">{letter}.</span> {opt} {isCorrect && '✔️'}
-                                </div>
-                              );
-                            })}
+                    {editingPackage.questions.map((item, idx) => {
+                      const isEditingThis = editingQuestionId === item.id;
+                      if (isEditingThis) {
+                        return (
+                          <div key={item.id || idx} className="bg-white border-2 border-blue-500 rounded-xl p-5 shadow-lg relative space-y-4 animate-in fade-in duration-100">
+                            <div className="font-bold text-blue-600 text-xs">MENGEDIT SOAL #{idx + 1}</div>
+                            
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wider">Teks Pertanyaan</label>
+                              <textarea 
+                                value={editQuestionText}
+                                onChange={(e) => setEditQuestionText(e.target.value)}
+                                placeholder="Masukkan pertanyaan..."
+                                className="w-full border border-gray-200 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium text-gray-800 bg-white"
+                                rows="2"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Pilihan A</label>
+                                <input 
+                                  type="text"
+                                  value={editOptionA}
+                                  onChange={(e) => setEditOptionA(e.target.value)}
+                                  placeholder="Pilihan A"
+                                  className="w-full border border-gray-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Pilihan B</label>
+                                <input 
+                                  type="text"
+                                  value={editOptionB}
+                                  onChange={(e) => setEditOptionB(e.target.value)}
+                                  placeholder="Pilihan B"
+                                  className="w-full border border-gray-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Pilihan C</label>
+                                <input 
+                                  type="text"
+                                  value={editOptionC}
+                                  onChange={(e) => setEditOptionC(e.target.value)}
+                                  placeholder="Pilihan C"
+                                  className="w-full border border-gray-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Pilihan D</label>
+                                <input 
+                                  type="text"
+                                  value={editOptionD}
+                                  onChange={(e) => setEditOptionD(e.target.value)}
+                                  placeholder="Pilihan D"
+                                  className="w-full border border-gray-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between pt-2">
+                              <div className="w-full sm:w-1/2">
+                                <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase">Kunci Jawaban Benar</label>
+                                <select 
+                                  value={editCorrectAnswer}
+                                  onChange={(e) => setEditCorrectAnswer(e.target.value)}
+                                  className="w-full border border-gray-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white font-medium"
+                                >
+                                  <option value="A">Pilihan A</option>
+                                  <option value="B">Pilihan B</option>
+                                  <option value="C">Pilihan C</option>
+                                  <option value="D">Pilihan D</option>
+                                </select>
+                              </div>
+                              <div className="flex gap-2 w-full sm:w-auto mt-3 sm:mt-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateQuestion(editingPackage.id, item.id)}
+                                  className="flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-bold transition-colors"
+                                >
+                                  Simpan Perubahan
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingQuestionId(null)}
+                                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold transition-colors"
+                                >
+                                  Batal
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                        ) : item.a && (
-                          <div className="bg-green-50 text-green-800 text-xs px-3 py-1.5 rounded-lg font-medium inline-block border border-green-100 mb-3">
-                            <span className="font-bold text-green-900">Petunjuk/Kunci:</span> {item.a}
+                        );
+                      }
+
+                      return (
+                        <div key={item.id || idx} className="bg-white border border-gray-150 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow relative">
+                          <div className="absolute top-4 right-4 flex items-center gap-1">
+                            <button 
+                              onClick={() => startEditingQuestion(item)}
+                              className="text-blue-500 hover:text-blue-700 p-1.5 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Edit Soal"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteQuestion(editingPackage.id, item.id)}
+                              className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Hapus Soal"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          <div className="font-bold text-blue-600 text-xs mb-2">SOAL #{idx + 1}</div>
+                          <p className="text-gray-800 text-sm whitespace-pre-wrap pr-16 mb-3 font-semibold leading-relaxed">
+                            {item.q}
+                          </p>
+                          
+                          {item.options && item.options.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 bg-gray-55/40 p-3 rounded-lg border border-gray-100">
+                              {item.options.map((opt, i) => {
+                                const letter = String.fromCharCode(65 + i);
+                                const isCorrect = item.a === letter;
+                                return (
+                                  <div key={i} className={`text-xs p-2 rounded-md font-medium border ${isCorrect ? 'bg-green-50 border-green-200 text-green-800' : 'bg-white border-gray-150 text-gray-700'}`}>
+                                    <span className="font-bold">{letter}.</span> {opt} {isCorrect && '✔️'}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : item.a && (
+                            <div className="bg-green-50 text-green-800 text-xs px-3 py-1.5 rounded-lg font-medium inline-block border border-green-100 mb-3">
+                              <span className="font-bold text-green-900">Petunjuk/Kunci:</span> {item.a}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

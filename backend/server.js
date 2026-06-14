@@ -1000,6 +1000,28 @@ app.delete('/api/questions-full/:id', async (req, res) => {
   }
 });
 
+// Update a question
+app.put('/api/questions-full/:id', async (req, res) => {
+  const { id } = req.params;
+  const { questionText, correctAnswer, options } = req.body;
+  const optionsJson = JSON.stringify(options || []);
+  try {
+    await db.query(
+      'UPDATE psychotest_questions SET question_text = ?, correct_answer = ?, options_json = ? WHERE id = ?',
+      [questionText, correctAnswer, optionsJson, id]
+    );
+    res.json({
+      success: true,
+      id: parseInt(id),
+      questionText,
+      correctAnswer,
+      options
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get questions by package name (for Pelamar taking the test)
 app.get('/api/packages/questions', async (req, res) => {
   const { packageName } = req.query;
