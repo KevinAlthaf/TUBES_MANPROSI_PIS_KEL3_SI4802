@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileQuestion, Plus, Trash2, Edit, X, Check } from 'lucide-react';
+import { FileQuestion, Plus, Trash2, Edit, X, Check, Upload, CheckCircle } from 'lucide-react';
 import { useData } from '../context/DataContext';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
@@ -27,6 +27,30 @@ export default function KelolaPsikotes() {
     setTimeout(() => {
       setToastMessage('');
     }, 3000);
+  };
+
+  const handlePublishPackage = async (id, name) => {
+    if (!window.confirm(`Apakah Anda yakin ingin mengupload paket "${name}" ke HRD? Setelah diupload, paket ini akan dipublikasikan dan dapat digunakan oleh HRD.`)) return;
+    
+    try {
+      const res = await fetch(`${API_URL}/packages-full/${id}/publish`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (res.ok) {
+        setPackages(prev => prev.map(p => p.id === id ? { ...p, status: 'published' } : p));
+        if (editingPackage && editingPackage.id === id) {
+          setEditingPackage(prev => ({ ...prev, status: 'published' }));
+        }
+        showToast(`Paket "${name}" berhasil diupload ke HRD!`);
+      } else {
+        showToast("Gagal mengupload paket ke HRD.");
+      }
+    } catch (error) {
+      console.error(error);
+      showToast("Koneksi backend gagal.");
+    }
   };
 
   // Fetch Packages with questions on mount
@@ -242,15 +266,32 @@ export default function KelolaPsikotes() {
                       </div>
                       <div>
                         <h4 className="font-bold text-gray-950 text-base">{pkg.name}</h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-gray-550 text-xs font-medium bg-gray-100 px-2 py-0.5 rounded-md">
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                          <span className="text-gray-550 text-xs font-semibold bg-gray-100 px-2 py-0.5 rounded-md">
                             {pkg.questions?.length || 0} Pertanyaan
                           </span>
+                          {pkg.status === 'published' ? (
+                            <span className="inline-flex items-center gap-1 text-green-700 text-xs font-semibold bg-green-50 border border-green-200 px-2 py-0.5 rounded-md">
+                              <CheckCircle size={12} className="text-green-650" /> Terpublikasi ke HRD
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-amber-700 text-xs font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span> Draft
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
                     
                     <div className="flex items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                      {pkg.status !== 'published' && (
+                        <button 
+                          onClick={() => handlePublishPackage(pkg.id, pkg.name)}
+                          className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm font-bold text-xs whitespace-nowrap"
+                        >
+                          <Upload size={14} /> Upload ke HRD
+                        </button>
+                      )}
                       <button 
                         onClick={() => {
                           setEditingPackage(pkg);
@@ -261,7 +302,7 @@ export default function KelolaPsikotes() {
                           setOptionD('');
                           setNewCorrectAnswer('A');
                         }}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-semibold text-xs"
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-semibold text-xs whitespace-nowrap"
                       >
                         <Edit size={14} /> Kelola Pertanyaan
                       </button>
@@ -289,7 +330,18 @@ export default function KelolaPsikotes() {
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
               <div>
                 <h3 className="text-lg font-bold text-gray-950">Kelola Pertanyaan Psikotes</h3>
-                <p className="text-gray-500 text-xs mt-1">Paket: <span className="font-bold text-blue-650">{editingPackage.name}</span></p>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <p className="text-gray-500 text-xs">Paket: <span className="font-bold text-blue-600">{editingPackage.name}</span></p>
+                  {editingPackage.status === 'published' ? (
+                    <span className="inline-flex items-center gap-1 text-green-700 text-[10px] font-bold bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">
+                      <CheckCircle size={10} /> Terpublikasi ke HRD
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-amber-700 text-[10px] font-bold bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                      <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse"></span> Draft
+                    </span>
+                  )}
+                </div>
               </div>
               <button onClick={() => setEditingPackage(null)} className="text-gray-400 hover:text-gray-655 p-2 rounded-full hover:bg-gray-200 transition-colors">
                 <X size={20} />
@@ -430,7 +482,21 @@ export default function KelolaPsikotes() {
             </div>
 
             {/* Modal Footer */}
-            <div className="p-6 border-t border-gray-100 flex justify-end bg-white rounded-b-2xl">
+            <div className="p-6 border-t border-gray-100 flex justify-between items-center bg-white rounded-b-2xl">
+              <div>
+                {editingPackage.status !== 'published' ? (
+                  <button 
+                    onClick={() => handlePublishPackage(editingPackage.id, editingPackage.name)}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-sm font-bold text-xs"
+                  >
+                    <Upload size={14} /> Upload ke HRD
+                  </button>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-green-700 text-xs font-semibold">
+                    <CheckCircle size={14} className="text-green-500" /> Sudah Terpublikasi ke HRD
+                  </span>
+                )}
+              </div>
               <button 
                 onClick={() => setEditingPackage(null)}
                 className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg font-bold transition-colors text-xs"
