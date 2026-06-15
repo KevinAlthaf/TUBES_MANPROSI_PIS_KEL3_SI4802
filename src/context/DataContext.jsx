@@ -301,7 +301,7 @@ export const DataProvider = ({ children }) => {
       isChatOpen, setIsChatOpen, psychotestPackages, addPsychotestPackage,
       supportMessages, addSupportMessage, updateJobStatus, updateJob, deleteJob,
       fetchCompanyProfile, updateCompanyProfile, uploadCompanyLogo, uploadCompanyNibFile,
-      fetchUserProfile, updateUserProfile
+      fetchUserProfile, updateUserProfile, fetchData
     }}>
       {children}
     </DataContext.Provider>

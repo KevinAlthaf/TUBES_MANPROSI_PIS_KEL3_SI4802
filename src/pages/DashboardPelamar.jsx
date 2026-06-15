@@ -6,7 +6,7 @@ import { Search, MapPin, SlidersHorizontal, FileText, CheckCircle2, X, Briefcase
 import { useNavigate } from 'react-router-dom';
 
 export default function DashboardPelamar() {
-  const { jobs } = useData();
+  const { jobs, applicants, fetchData } = useData();
   const { user } = useAuth();
   const { addToast } = useToast();
   const navigate = useNavigate();
@@ -27,8 +27,18 @@ export default function DashboardPelamar() {
   const [filterJenisPekerjaan, setFilterJenisPekerjaan] = useState([]);
   const [sortBy, setSortBy] = useState('rekomendasi');
 
-  // Helper to safely get jobs
-  const activeJobs = (jobs || []).filter(j => j.status === 'Active' || j.status === 'Dibuka');
+  // Get all job IDs that the current user has already applied for
+  const appliedJobIds = (applicants || [])
+    .filter(app => {
+      const appUserId = app.user_id !== undefined ? app.user_id : app.userId;
+      return Number(appUserId) === Number(user?.id);
+    })
+    .map(app => app.job_id !== undefined ? app.job_id : app.jobId);
+
+  // Helper to safely get jobs, filtering out jobs that the user has already applied for
+  const activeJobs = (jobs || [])
+    .filter(j => j.status === 'Active' || j.status === 'Dibuka')
+    .filter(j => !appliedJobIds.includes(j.id));
 
   const handleToggleFilter = (item, list, setList) => {
     if (list.includes(item)) {
@@ -84,6 +94,9 @@ export default function DashboardPelamar() {
       if (data.success) {
         setShowApplySuccess(true);
         setSelectedJob(null);
+        if (typeof fetchData === 'function') {
+          fetchData();
+        }
       } else {
         addToast(data.error || "Gagal melamar.", "error");
       }

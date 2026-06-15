@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Users, Filter, CheckCircle, XCircle, CalendarClock, BrainCircuit, FileText, ChevronRight, X, ThumbsUp, ThumbsDown, Video, Calendar } from 'lucide-react';
+import { Users, Filter, CheckCircle, XCircle, CalendarClock, BrainCircuit, FileText, ChevronRight, X, ThumbsUp, ThumbsDown, Video, Calendar, Loader2, Sparkles } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 
 export default function Pelamar() {
-  const { applicants, jobs, updateApplicantStatus } = useData();
+  const { applicants, jobs, updateApplicantStatus, fetchData } = useData();
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -17,6 +17,49 @@ export default function Pelamar() {
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterJob, setFilterJob] = useState(initialJobId);
   const [selectedAiMatch, setSelectedAiMatch] = useState(null);
+  const [isReanalyzingCv, setIsReanalyzingCv] = useState(false);
+
+  const parseAiList = (data) => {
+    if (Array.isArray(data)) return data;
+    if (typeof data === 'string') {
+      try {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {}
+      return data.split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  const handleReanalyzeCv = async (applicantId) => {
+    setIsReanalyzingCv(true);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      const res = await fetch(`${API_URL}/applicants/${applicantId}/analyze-cv`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSelectedAiMatch(prev => ({
+            ...prev,
+            matchScore: data.matchScore,
+            aiMatchDetails: data.aiMatchDetails
+          }));
+          await fetchData();
+        } else {
+          alert("Gagal melakukan analisis ulang: " + (data.error || "Unknown error"));
+        }
+      } else {
+        alert("Gagal menghubungi server.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan koneksi.");
+    } finally {
+      setIsReanalyzingCv(false);
+    }
+  };
   
   // Modals State
   const [confirmStatusModal, setConfirmStatusModal] = useState({ isOpen: false, applicantId: null, targetStatus: null, title: '', message: '' });
@@ -357,12 +400,12 @@ export default function Pelamar() {
                     <ThumbsUp size={18} className="text-green-500" /> Poin Kelebihan
                   </h4>
                   <ul className="space-y-2">
-                    {selectedAiMatch.aiMatchDetails?.strengths?.map((s, i) => (
+                    {parseAiList(selectedAiMatch.aiMatchDetails?.strengths).map((s, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-green-700">
                         <span className="mt-1 w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span> {s}
                       </li>
                     ))}
-                    {!selectedAiMatch.aiMatchDetails && <li className="text-sm text-green-700 italic">Data tidak tersedia</li>}
+                    {parseAiList(selectedAiMatch.aiMatchDetails?.strengths).length === 0 && <li className="text-sm text-green-700 italic">Data tidak tersedia</li>}
                   </ul>
                 </div>
                 
@@ -371,21 +414,40 @@ export default function Pelamar() {
                     <ThumbsDown size={18} className="text-red-500" /> Poin Kekurangan / Gap
                   </h4>
                   <ul className="space-y-2">
-                    {selectedAiMatch.aiMatchDetails?.weaknesses?.map((w, i) => (
+                    {parseAiList(selectedAiMatch.aiMatchDetails?.weaknesses).map((w, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm text-red-700">
                         <span className="mt-1 w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span> {w}
                       </li>
                     ))}
-                    {!selectedAiMatch.aiMatchDetails && <li className="text-sm text-red-700 italic">Data tidak tersedia</li>}
+                    {parseAiList(selectedAiMatch.aiMatchDetails?.weaknesses).length === 0 && <li className="text-sm text-red-700 italic">Data tidak tersedia</li>}
                   </ul>
                 </div>
               </div>
 
               <div className="border-t border-gray-100 pt-4">
                 <h4 className="font-semibold text-gray-900 mb-2 text-sm">Kesimpulan AI:</h4>
-                <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg italic border border-gray-100">
+                <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg italic border border-gray-100 mb-4">
                   "{selectedAiMatch.aiMatchDetails?.conclusion || 'Menunggu analisis lebih lanjut.'}"
                 </p>
+              </div>
+
+              <div className="border-t border-gray-100 pt-4">
+                <button
+                  type="button"
+                  onClick={() => handleReanalyzeCv(selectedAiMatch.id)}
+                  disabled={isReanalyzingCv}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  {isReanalyzingCv ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} /> Menganalisis...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={16} /> Re-Analisis CV dengan Gemini AI
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           </div>
