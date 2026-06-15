@@ -89,6 +89,22 @@ function InterviewRoomStatus({ app }) {
     }
   }
 
+  // Room has ended
+  if (room.status === 'ended') {
+    return (
+      <div className="mt-8 p-5 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-inner">
+        <div>
+          <h4 className="font-bold text-green-950 flex items-center gap-2 mb-1">
+            <CheckCircle2 size={20} className="text-green-600"/> Wawancara Selesai
+          </h4>
+          <p className="text-sm text-green-800">
+            Sesi wawancara Anda telah selesai dilaksanakan. Silakan tunggu informasi hasil seleksi selanjutnya dari tim HRD.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Room is ready (waiting/active/scheduled but time has passed)
   return (
     <div className="mt-8 p-5 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-inner">
