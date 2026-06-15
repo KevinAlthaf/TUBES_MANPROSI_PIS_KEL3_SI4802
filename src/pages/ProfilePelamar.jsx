@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { Save, User, Briefcase, FileText, GraduationCap, Users } from 'lucide-react';
+import { Save, User, Briefcase, FileText, GraduationCap, Users, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function ProfilePelamar() {
@@ -12,30 +12,17 @@ export default function ProfilePelamar() {
   const profile = user?.profile || {};
 
   const [formData, setFormData] = useState({
-    // Data Diri
     namaLengkap: profile.nama_lengkap || user?.name || '',
     email: user?.email || '',
     noTelepon: profile.no_telepon || user?.phone || '',
     kotaDomisili: profile.kota_domisili || '',
     pendidikanTerakhir: profile.pendidikan_terakhir || '',
-    
-    // Pengalaman & Keahlian
     posisiDiinginkan: profile.posisi_diinginkan || '',
     pengalamanKerja: profile.pengalaman_kerja || '',
     ekspektasiGajiMin: profile.ekspektasi_gaji_min || '',
     ekspektasiGajiMax: profile.ekspektasi_gaji_max || '',
     skills: profile.skills ? profile.skills.join(', ') : '',
-    
-    // Pendidikan
-    edukasi: profile.edukasi || {
-      jenjang: '',
-      jurusan: '',
-      mulai: '',
-      lulus: '',
-      sekolah: ''
-    },
-
-    // Organisasi
+    edukasi: profile.edukasi || { jenjang: '', jurusan: '', mulai: '', lulus: '', sekolah: '' },
     pengalamanOrganisasi: profile.pengalaman_organisasi || ''
   });
 
@@ -65,13 +52,7 @@ export default function ProfilePelamar() {
         ekspektasiGajiMin: p.ekspektasi_gaji_min || '',
         ekspektasiGajiMax: p.ekspektasi_gaji_max || '',
         skills: p.skills ? p.skills.join(', ') : '',
-        edukasi: p.edukasi || {
-          jenjang: '',
-          jurusan: '',
-          mulai: '',
-          lulus: '',
-          sekolah: ''
-        },
+        edukasi: p.edukasi || { jenjang: '', jurusan: '', mulai: '', lulus: '', sekolah: '' },
         pengalamanOrganisasi: p.pengalaman_organisasi || ''
       }));
       setDocs({
@@ -99,12 +80,14 @@ export default function ProfilePelamar() {
     if (file) {
       addToast(`Mengunggah ${type}...`, 'info', 1500);
       try {
-        const formData = new FormData();
-        formData.append('file', file);
+        const payloadData = new FormData();
+        payloadData.append('file', file);
 
-        const res = await fetch('/api/upload', {
+        // Siap Deploy: Menggunakan VITE_API_URL agar tidak error 404 di Vercel
+        const API_URL = import.meta.env.VITE_API_URL || '/api';
+        const res = await fetch(`${API_URL}/upload`, {
           method: 'POST',
-          body: formData
+          body: payloadData
         });
 
         if (res.ok) {
@@ -114,25 +97,47 @@ export default function ProfilePelamar() {
           
           try {
             await updateProfile({ [fieldName]: data.filename });
-            addToast(`${type.toUpperCase()} berhasil diunggah dan disimpan ke profil!`, 'success');
+            addToast(`${type.toUpperCase()} berhasil diunggah!`, 'success');
           } catch (dbErr) {
-            console.error("Auto-save to database failed", dbErr);
-            addToast(`Gagal menyimpan ${type} ke database profil.`, 'error');
+            addToast(`Gagal menyimpan ${type} ke database.`, 'error');
           }
         } else {
           addToast(`Gagal mengunggah ${type}.`, 'error');
         }
       } catch (err) {
-        console.error(err);
         addToast(`Gagal menghubungi server.`, 'error');
       }
+    }
+  };
+
+  // Fungsi Baru: Hapus Dokumen Siap Produksi
+  const handleDeleteFile = async (type, filename) => {
+    if (!window.confirm(`Yakin ingin menghapus dokumen ${type.toUpperCase()} ini?`)) return;
+    
+    addToast(`Menghapus ${type}...`, 'info', 1500);
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '/api';
+      
+      // 1. Hapus file fisik di server Vercel
+      await fetch(`${API_URL}/upload/${filename}`, { method: 'DELETE' });
+      
+      // 2. Kosongkan state lokal UI
+      const fieldName = `${type}Url`;
+      setDocs(prev => ({ ...prev, [fieldName]: '' }));
+      
+      // 3. Update database Neon agar nilainya menjadi NULL
+      await updateProfile({ [fieldName]: null });
+      
+      addToast(`${type.toUpperCase()} berhasil dihapus.`, 'success');
+    } catch (err) {
+      console.error(err);
+      addToast(`Gagal menghapus dokumen ${type}.`, 'error');
     }
   };
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setIsSaving(true);
-    
     try {
       const payload = {
         nama_lengkap: formData.namaLengkap,
@@ -168,7 +173,7 @@ export default function ProfilePelamar() {
         <button 
           onClick={handleSaveProfile}
           disabled={isSaving}
-          className="bg-blue-600 text-white font-medium hover:bg-blue-700 px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed shadow-sm"
+          className="bg-blue-600 text-white font-medium hover:bg-blue-700 px-6 py-2.5 rounded-xl transition-colors flex items-center gap-2 disabled:opacity-70 shadow-sm"
         >
           <Save size={18} />
           {isSaving ? 'Menyimpan...' : 'Simpan Profil'}
@@ -176,7 +181,6 @@ export default function ProfilePelamar() {
       </div>
 
       <div className="space-y-6">
-        
         {/* DATA DIRI */}
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-50 flex items-center gap-2 bg-gray-50/50">
@@ -185,20 +189,20 @@ export default function ProfilePelamar() {
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Nama Lengkap *</label>
-              <input type="text" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Nama Lengkap *</label>
+              <input type="text" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Email *</label>
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Email *</label>
               <input type="email" name="email" value={formData.email} disabled className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-gray-50 text-gray-500 cursor-not-allowed" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">No. Telepon *</label>
-              <input type="tel" name="noTelepon" value={formData.noTelepon} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">No. Telepon *</label>
+              <input type="tel" name="noTelepon" value={formData.noTelepon} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Kota Domisili *</label>
-              <select name="kotaDomisili" value={formData.kotaDomisili} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors bg-white">
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Kota Domisili *</label>
+              <select name="kotaDomisili" value={formData.kotaDomisili} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white">
                 <option value="">Pilih Kota</option>
                 <option value="Jakarta">Jakarta</option>
                 <option value="Bandung, Jawa Barat">Bandung, Jawa Barat</option>
@@ -207,8 +211,8 @@ export default function ProfilePelamar() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Pendidikan Terakhir</label>
-              <select name="pendidikanTerakhir" value={formData.pendidikanTerakhir} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors bg-white">
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Pendidikan Terakhir</label>
+              <select name="pendidikanTerakhir" value={formData.pendidikanTerakhir} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white">
                 <option value="">Pilih Pendidikan</option>
                 <option value="SMA/SMK">SMA/SMK</option>
                 <option value="D3">D3</option>
@@ -227,12 +231,12 @@ export default function ProfilePelamar() {
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Posisi Yang Diinginkan *</label>
-              <input type="text" name="posisiDiinginkan" value={formData.posisiDiinginkan} onChange={handleChange} placeholder="cth: UI/UX Designer, Frontend Developer" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Posisi Yang Diinginkan *</label>
+              <input type="text" name="posisiDiinginkan" value={formData.posisiDiinginkan} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Pengalaman Kerja</label>
-              <select name="pengalamanKerja" value={formData.pengalamanKerja} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors bg-white">
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Pengalaman Kerja</label>
+              <select name="pengalamanKerja" value={formData.pengalamanKerja} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-white">
                 <option value="">Pilih Pengalaman</option>
                 <option value="Fresh Graduate">Fresh Graduate</option>
                 <option value="< 1 Tahun">&lt; 1 Tahun</option>
@@ -241,16 +245,16 @@ export default function ProfilePelamar() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Ekspektasi Gaji (Min)</label>
-              <input type="number" name="ekspektasiGajiMin" value={formData.ekspektasiGajiMin} onChange={handleChange} placeholder="5000000" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Ekspektasi Gaji (Min)</label>
+              <input type="number" name="ekspektasiGajiMin" value={formData.ekspektasiGajiMin} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Ekspektasi Gaji (Max)</label>
-              <input type="number" name="ekspektasiGajiMax" value={formData.ekspektasiGajiMax} onChange={handleChange} placeholder="8000000" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Ekspektasi Gaji (Max)</label>
+              <input type="number" name="ekspektasiGajiMax" value={formData.ekspektasiGajiMax} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Keahlian / Skill</label>
-              <input type="text" name="skills" value={formData.skills} onChange={handleChange} placeholder="Ketik skill lalu pisahkan dengan koma..." className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Keahlian / Skill</label>
+              <input type="text" name="skills" value={formData.skills} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
               <div className="flex flex-wrap gap-2 mt-3">
                 {formData.skills.split(',').filter(s=>s.trim()).map((skill, idx) => (
                   <span key={idx} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-sm font-medium border border-blue-100">
@@ -273,10 +277,10 @@ export default function ProfilePelamar() {
               { id: 'foto', label: 'Foto 3x4', icon: '📷' },
               { id: 'ktp', label: 'KTP', icon: '🪪' },
               { id: 'ijazah', label: 'Ijazah Terakhir', icon: '🎓' },
-              { id: 'surat', label: 'Surat Keterangan Lainnya', icon: '📝' },
-              { id: 'cv', label: 'Curriculum Vitae (CV)', icon: '📄' }
+              { id: 'surat', label: 'Surat Keterangan Lainnya', icon: '📄' },
+              { id: 'cv', label: 'Curriculum Vitae (CV)', icon: '📝' }
             ].map((doc) => (
-              <div key={doc.id} className="flex items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50 hover:bg-gray-100/50 transition-colors">
+              <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-gray-100 bg-gray-50 hover:bg-gray-100/50 gap-4">
                 <div className="flex items-center gap-3">
                   <span className="text-xl">{doc.icon}</span>
                   <div>
@@ -286,17 +290,29 @@ export default function ProfilePelamar() {
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   {docs[`${doc.id}Url`] && (
                     <span className="text-sm font-medium text-green-600 flex items-center gap-1">✓ Terupload</span>
                   )}
                   {docs[`${doc.id}Url`] && doc.id === 'cv' && (
-                    <a href={`/uploads/${docs.cvUrl}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-semibold mr-1">
+                    <a href={`/uploads/${docs.cvUrl}`} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline font-semibold mx-2">
                       Lihat CV
                     </a>
                   )}
+                  
+                  {/* Tombol Hapus Dokumen */}
+                  {docs[`${doc.id}Url`] && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteFile(doc.id, docs[`${doc.id}Url`])}
+                      className="flex items-center gap-1.5 text-sm font-semibold bg-white border border-red-200 hover:border-red-500 hover:bg-red-50 px-3 py-2 rounded-lg text-red-600 transition-all shadow-sm"
+                    >
+                      <Trash2 size={16} /> Hapus
+                    </button>
+                  )}
+
                   <label className="cursor-pointer text-sm font-semibold bg-white border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 px-4 py-2 rounded-lg text-gray-700 hover:text-blue-600 transition-all shadow-sm">
-                    {docs[`${doc.id}Url`] ? "Ganti / Upload Ulang" : "Upload"}
+                    {docs[`${doc.id}Url`] ? "Ganti" : "Upload"}
                     <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={(e) => handleFileUpload(doc.id, e)} />
                   </label>
                 </div>
@@ -305,7 +321,7 @@ export default function ProfilePelamar() {
           </div>
         </section>
 
-        {/* PENDIDIKAN */}
+        {/* PENDIDIKAN & ORGANISASI (Tetap sama) */}
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-50 flex items-center gap-2 bg-gray-50/50">
             <GraduationCap size={18} className="text-blue-600" />
@@ -313,68 +329,59 @@ export default function ProfilePelamar() {
           </div>
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Jenjang Pendidikan *</label>
-              <input type="text" name="edu_jenjang" value={formData.edukasi.jenjang} onChange={handleChange} placeholder="cth: S1" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Jenjang Pendidikan *</label>
+              <input type="text" name="edu_jenjang" value={formData.edukasi.jenjang} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Jurusan / Program Studi *</label>
-              <input type="text" name="edu_jurusan" value={formData.edukasi.jurusan} onChange={handleChange} placeholder="cth: Sistem Informasi" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Jurusan / Program Studi *</label>
+              <input type="text" name="edu_jurusan" value={formData.edukasi.jurusan} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Mulai Pendidikan *</label>
-              <input type="text" name="edu_mulai" value={formData.edukasi.mulai} onChange={handleChange} placeholder="cth: 14 September 2020" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Mulai Pendidikan *</label>
+              <input type="text" name="edu_mulai" value={formData.edukasi.mulai} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Lulusan Pendidikan</label>
-              <input type="text" name="edu_lulus" value={formData.edukasi.lulus} onChange={handleChange} placeholder="cth: Juni 2024" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Lulusan Pendidikan</label>
+              <input type="text" name="edu_lulus" value={formData.edukasi.lulus} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Sekolah / Perguruan Tinggi *</label>
-              <input type="text" name="edu_sekolah" value={formData.edukasi.sekolah} onChange={handleChange} placeholder="cth: Telkom University" className="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors" />
+              <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Sekolah / Perguruan Tinggi *</label>
+              <input type="text" name="edu_sekolah" value={formData.edukasi.sekolah} onChange={handleChange} className="w-full border border-gray-200 rounded-lg px-4 py-2.5" />
             </div>
           </div>
         </section>
 
-        {/* ORGANISASI */}
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-50 flex items-center gap-2 bg-gray-50/50">
             <Users size={18} className="text-blue-600" />
             <h2 className="font-semibold text-gray-800">Pengalaman Organisasi/Pengembangan diri</h2>
           </div>
           <div className="p-6">
-            <p className="text-sm text-gray-500 mb-4">Jika ada, ceritakan pengalaman organisasi atau pengembangan diri yang pernah kamu lakukan agar rekruter terkesan.</p>
             <textarea 
               name="pengalamanOrganisasi"
               value={formData.pengalamanOrganisasi}
               onChange={handleChange}
-              rows={6}
-              placeholder="Contoh:&#10;- Volunteer dalam kegiatan publik&#10;- Mengelola online shop"
-              className="w-full border border-gray-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 transition-colors bg-gray-50/30"
+              rows={4}
+              className="w-full border border-gray-200 rounded-lg px-4 py-3 bg-gray-50/30"
             />
           </div>
         </section>
-
       </div>
 
-      {/* Interactive Success Modal */}
       {showSaveSuccess && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <span className="text-4xl">🎉</span>
+              <span className="text-4xl">✓</span>
             </div>
             <h3 className="text-2xl font-bold text-gray-900 mb-2">Profil Diperbarui!</h3>
-            <p className="text-gray-600 mb-8">Data profil Anda telah berhasil disimpan ke dalam sistem. Lanjutkan aktivitas Anda.</p>
-            <button 
-              onClick={() => setShowSaveSuccess(false)}
-              className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-blue-700 hover:shadow-lg transition-all focus:outline-none focus:ring-4 focus:ring-blue-100"
-            >
+            <p className="text-gray-600 mb-8">Data profil Anda telah berhasil disimpan.</p>
+            <button onClick={() => setShowSaveSuccess(false)} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">
               Oke, Mengerti
             </button>
           </div>
         </div>
       )}
-
     </div>
   );
 }
