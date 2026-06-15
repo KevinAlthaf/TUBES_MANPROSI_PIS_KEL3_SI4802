@@ -1231,6 +1231,23 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   res.json({ success: true, filename: req.file.filename });
 });
 
+// KODE BARU YANG HARUS DITAMBAHKAN: API Untuk Menghapus File
+app.delete('/api/upload/:filename', (req, res) => {
+  const { filename } = req.params;
+  const filePath = path.join(uploadDir, filename);
+  
+  try {
+    // Mengecek apakah file masih ada di penyimpanan temporer Vercel
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath); // Menghapus file fisik
+    }
+    res.json({ success: true, message: 'File deleted successfully' });
+  } catch (error) {
+    console.error("Error deleting file:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/profile/user', async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM user_profile WHERE id = 1');
