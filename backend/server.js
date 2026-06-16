@@ -617,6 +617,15 @@ app.post('/api/applications', async (req, res) => {
     if (jobRows.length === 0) return res.status(404).json({ error: 'Lowongan tidak ditemukan.' });
     const job = jobRows[0];
 
+    // Check if already applied
+    const [existing] = await db.query(
+      'SELECT id FROM applicants WHERE user_id = ? AND job_id = ?',
+      [userId, jobId]
+    );
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'Anda sudah melamar lowongan ini.' });
+    }
+
     // 2. Ambil profil pelamar
     const [profRows] = await db.query('SELECT * FROM pelamar_profiles WHERE user_id = ?', [userId]);
     const profile = profRows[0] || {};

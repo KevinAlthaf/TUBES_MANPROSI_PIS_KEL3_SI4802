@@ -457,13 +457,22 @@ export default function DashboardPelamar() {
             </div>
 
             <div className="p-4 border-t border-gray-100 bg-white flex justify-end">
-              <button 
-                onClick={() => handleApply(selectedJob)}
-                disabled={isApplying}
-                className="bg-blue-600 text-white font-bold px-8 py-3 rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed w-full sm:w-auto justify-center"
-              >
-                {isApplying ? 'Mengirim Lamaran...' : <><Send size={18} /> Lamar Sekarang</>}
-              </button>
+              {selectedJob && appliedJobIds.includes(selectedJob.id) ? (
+                <button 
+                  disabled={true}
+                  className="bg-gray-400 text-white font-bold px-8 py-3 rounded-xl flex items-center gap-2 shadow-sm cursor-not-allowed w-full sm:w-auto justify-center"
+                >
+                  <CheckCircle2 size={18} /> Sudah Dilamar
+                </button>
+              ) : (
+                <button 
+                  onClick={() => handleApply(selectedJob)}
+                  disabled={isApplying}
+                  className="bg-blue-600 text-white font-bold px-8 py-3 rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed w-full sm:w-auto justify-center"
+                >
+                  {isApplying ? 'Mengirim Lamaran...' : <><Send size={18} /> Lamar Sekarang</>}
+                </button>
+              )}
             </div>
           </div>
         </div>
